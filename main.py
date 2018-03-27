@@ -89,6 +89,9 @@ def main():
     global args, best_result, output_directory, train_csv, test_csv
     args = parser.parse_args()
     args.data = os.path.join('data', args.data)
+    if args.modality == 'rgb' and args.num_samples != 0:
+        print("number of samples is forced to be 0 when input modality is rgb")
+        args.num_samples = 0
     
     # create results folder, if not already exists
     output_directory = os.path.join('results',
@@ -201,8 +204,9 @@ def main():
             with open(best_txt, 'w') as txtfile:
                 txtfile.write("epoch={}\nmse={:.3f}\nrmse={:.3f}\nabsrel={:.3f}\nlg10={:.3f}\nmae={:.3f}\ndelta1={:.3f}\nt_gpu={:.4f}\n".
                     format(epoch, result.mse, result.rmse, result.absrel, result.lg10, result.mae, result.delta1, result.gpu_time))
-            img_filename = output_directory + '/comparison_best.png'
-            utils.save_image(img_merge, img_filename)
+            if img_merge is not None:
+                img_filename = output_directory + '/comparison_best.png'
+                utils.save_image(img_merge, img_filename)
        
         save_checkpoint({
             'epoch': epoch,
@@ -295,14 +299,22 @@ def validate(val_loader, model, epoch, write_to_file=True):
 
         # save 8 images for visualization
         skip = 50
-        if i == 0:
-            img_merge = utils.merge_into_row(input, target, depth_pred)
-        elif (i < 8*skip) and (i % skip == 0):
-            row = utils.merge_into_row(input, target, depth_pred)
-            img_merge = utils.add_row(img_merge, row)
-        elif i == 8*skip:
-            filename = output_directory + '/comparison_' + str(epoch) + '.png'
-            utils.save_image(img_merge, filename)
+        if args.modality == 'd':
+            img_merge = None
+        else:
+            if args.modality == 'rgb':
+                rgb = input
+            elif args.modality == 'rgbd':
+                rgb = input[:,:3,:,:]
+
+            if i == 0:
+                img_merge = utils.merge_into_row(rgb, target, depth_pred)
+            elif (i < 8*skip) and (i % skip == 0):
+                row = utils.merge_into_row(rgb, target, depth_pred)
+                img_merge = utils.add_row(img_merge, row)
+            elif i == 8*skip:
+                filename = output_directory + '/comparison_' + str(epoch) + '.png'
+                utils.save_image(img_merge, filename)
 
         if (i+1) % args.print_freq == 0:
             print('Test: [{0}/{1}]\t'
@@ -340,7 +352,7 @@ def save_checkpoint(state, is_best, epoch):
     if is_best:
         best_filename = os.path.join(output_directory, 'model_best.pth.tar')
         shutil.copyfile(checkpoint_filename, best_filename)
-    if epoch > 1:
+    if epoch > 0:
         prev_checkpoint_filename = os.path.join(output_directory, 'checkpoint-' + str(epoch-1) + '.pth.tar')
         if os.path.exists(prev_checkpoint_filename):
             os.remove(prev_checkpoint_filename)
