@@ -15,12 +15,14 @@ import torch.utils.data
 from nyu_dataloader import NYUDataset
 from models import Decoder, ResNet
 from metrics import AverageMeter, Result
+from dense_to_sparse import UniformSampling, SimulatedStereo
 import criteria
 import utils
 
 model_names = ['resnet18', 'resnet50']
 loss_names = ['l1', 'l2']
-data_names = ['NYUDataset']
+data_names = ['nyudepthv2']
+sparsifier_names = [x.name for x in [UniformSampling, SimulatedStereo]]
 decoder_names = Decoder.names
 modality_names = NYUDataset.modality_names
 
@@ -46,6 +48,13 @@ parser.add_argument('--modality', '-m', metavar='MODALITY', default='rgb',
                         ' (default: rgb)')
 parser.add_argument('-s', '--num-samples', default=0, type=int, metavar='N',
                     help='number of sparse depth samples (default: 0)')
+parser.add_argument('--max-depth', default=-1.0, type=float, metavar='D',
+                    help='cut-off depth of sparsifier, negative values means infinity (default: inf [m])')
+parser.add_argument('--sparsifier', metavar='SPARSIFIER', default=UniformSampling.name,
+                    choices=sparsifier_names,
+                    help='sparsifier: ' +
+                         ' | '.join(sparsifier_names) +
+                         ' (default: ' + UniformSampling.name + ')')
 parser.add_argument('--decoder', '-d', metavar='DECODER', default='deconv2',
                     choices=decoder_names,
                     help='decoder: ' +
@@ -88,15 +97,24 @@ best_result.set_to_worst()
 def main():
     global args, best_result, output_directory, train_csv, test_csv
     args = parser.parse_args()
-    args.data = os.path.join('data', args.data)
     if args.modality == 'rgb' and args.num_samples != 0:
         print("number of samples is forced to be 0 when input modality is rgb")
         args.num_samples = 0
-    
+    if args.modality == 'rgb' and args.max_depth != 0.0:
+        print("max depth is forced to be 0.0 when input modality is rgb/rgbd")
+        args.max_depth = 0.0
+
+    sparsifier = None
+    max_depth = args.max_depth if args.max_depth >= 0.0 else np.inf
+    if args.sparsifier == UniformSampling.name:
+        sparsifier = UniformSampling(num_samples=args.num_samples, max_depth=max_depth)
+    elif args.sparsifier == SimulatedStereo.name:
+        sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
+
     # create results folder, if not already exists
     output_directory = os.path.join('results',
-        'NYUDataset.modality={}.nsample={}.arch={}.decoder={}.criterion={}.lr={}.bs={}'.
-        format(args.modality, args.num_samples, args.arch, args.decoder, args.criterion, args.lr, args.batch_size))
+        '{}.sparsifier={}.modality={}.arch={}.decoder={}.criterion={}.lr={}.bs={}'.
+                                    format(args.data, sparsifier, args.modality, args.arch, args.decoder, args.criterion, args.lr, args.batch_size))
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
     train_csv = os.path.join(output_directory, 'train.csv')
@@ -112,19 +130,19 @@ def main():
 
     # Data loading code
     print("=> creating data loaders ...")
-    traindir = os.path.join(args.data, 'train')
-    valdir = os.path.join(args.data, 'val')
+    traindir = os.path.join('data', args.data, 'train')
+    valdir = os.path.join('data', args.data, 'val')
 
-    train_dataset = NYUDataset(traindir, type='train', 
-        modality=args.modality, num_samples=args.num_samples)
+    train_dataset = NYUDataset(traindir, type='train',
+        modality=args.modality, sparsifier=sparsifier)
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True,
         num_workers=args.workers, pin_memory=True, sampler=None)
 
     # set batch size to be 1 for validation
-    val_dataset = NYUDataset(valdir, type='val', 
-        modality=args.modality, num_samples=args.num_samples)
-    val_loader = torch.utils.data.DataLoader(val_dataset, 
+    val_dataset = NYUDataset(valdir, type='val',
+        modality=args.modality, sparsifier=sparsifier)
+    val_loader = torch.utils.data.DataLoader(val_dataset,
         batch_size=1, shuffle=False, num_workers=args.workers, pin_memory=True)
 
     print("=> data loaders created.")
@@ -306,11 +324,18 @@ def validate(val_loader, model, epoch, write_to_file=True):
                 rgb = input
             elif args.modality == 'rgbd':
                 rgb = input[:,:3,:,:]
+                depth = input[:,3:,:,:]
 
             if i == 0:
-                img_merge = utils.merge_into_row(rgb, target, depth_pred)
+                if args.modality == 'rgbd':
+                    img_merge = utils.merge_into_row_with_gt(rgb, depth, target, depth_pred)
+                else:
+                    img_merge = utils.merge_into_row(rgb, target, depth_pred)
             elif (i < 8*skip) and (i % skip == 0):
-                row = utils.merge_into_row(rgb, target, depth_pred)
+                if args.modality == 'rgbd':
+                    row = utils.merge_into_row_with_gt(rgb, depth, target, depth_pred)
+                else:
+                    row = utils.merge_into_row(rgb, target, depth_pred)
                 img_merge = utils.add_row(img_merge, row)
             elif i == 8*skip:
                 filename = output_directory + '/comparison_' + str(epoch) + '.png'
