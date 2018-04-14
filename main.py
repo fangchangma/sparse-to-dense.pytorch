@@ -53,8 +53,8 @@ parser.add_argument('--decoder', '-d', metavar='DECODER', default='deconv2',
                         ' (default: deconv2)')
 parser.add_argument('-j', '--workers', default=10, type=int, metavar='N',
                     help='number of data loading workers (default: 10)')
-parser.add_argument('--epochs', default=30, type=int, metavar='N',
-                    help='number of total epochs to run (default: 30)')
+parser.add_argument('--epochs', default=15, type=int, metavar='N',
+                    help='number of total epochs to run (default: 15)')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('-c', '--criterion', metavar='LOSS', default='l1', 
@@ -106,10 +106,9 @@ def main():
     # define loss function (criterion) and optimizer
     if args.criterion == 'l2':
         criterion = criteria.MaskedMSELoss().cuda()
-        out_channels = 1
     elif args.criterion == 'l1':
         criterion = criteria.MaskedL1Loss().cuda()
-        out_channels = 1
+    out_channels = 1
 
     # Data loading code
     print("=> creating data loaders ...")
@@ -157,6 +156,7 @@ def main():
             print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
+            return
 
     # create new model
     else:
@@ -358,8 +358,8 @@ def save_checkpoint(state, is_best, epoch):
             os.remove(prev_checkpoint_filename)
 
 def adjust_learning_rate(optimizer, epoch):
-    """Sets the learning rate to the initial LR decayed by 10 every 10 epochs"""
-    lr = args.lr * (0.1 ** (epoch // 10))
+    """Sets the learning rate to the initial LR decayed by 10 every 5 epochs"""
+    lr = args.lr * (0.1 ** (epoch // 5))
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
