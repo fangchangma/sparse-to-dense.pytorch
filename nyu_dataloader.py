@@ -96,7 +96,7 @@ to_tensor = transforms.ToTensor()
 class NYUDataset(data.Dataset):
     modality_names = ['rgb', 'rgbd', 'd'] # , 'g', 'gd'
 
-    def __init__(self, root, type, modality='rgb', num_samples=0, loader=h5_loader):
+    def __init__(self, root, type, sparsifier=None, modality='rgb', loader=h5_loader):
         classes, class_to_idx = find_classes(root)
         imgs = make_dataset(root, class_to_idx)
         if len(imgs) == 0:
@@ -115,28 +115,25 @@ class NYUDataset(data.Dataset):
             raise (RuntimeError("Invalid dataset type: " + type + "\n"
                                 "Supported dataset types are: train, val"))
         self.loader = loader
+        self.sparsifier = sparsifier
 
         if modality in self.modality_names:
             self.modality = modality
-            if modality in ['rgbd', 'd', 'gd']:
-                if num_samples <= 0:
-                    raise (RuntimeError("Invalid number of samples: {}\n".format(num_samples)))
-                self.num_samples = num_samples
-            else:
-                self.num_samples = 0
         else:
             raise (RuntimeError("Invalid modality type: " + modality + "\n"
                                 "Supported dataset types are: " + ''.join(self.modality_names)))
 
-    def create_sparse_depth(self, depth, num_samples):
-        prob = float(num_samples) / depth.size
-        mask_keep = np.random.uniform(0, 1, depth.shape) < prob
-        sparse_depth = np.zeros(depth.shape)
-        sparse_depth[mask_keep] = depth[mask_keep]
-        return sparse_depth
+    def create_sparse_depth(self, rgb, depth):
+        if self.sparsifier is None:
+            return depth
+        else:
+            mask_keep = self.sparsifier.dense_to_sparse(rgb, depth)
+            sparse_depth = np.zeros(depth.shape)
+            sparse_depth[mask_keep] = depth[mask_keep]
+            return sparse_depth
 
-    def create_rgbd(self, rgb, depth, num_samples):
-        sparse_depth = self.create_sparse_depth(depth, num_samples)
+    def create_rgbd(self, rgb, depth):
+        sparse_depth = self.create_sparse_depth(rgb, depth)
         # rgbd = np.dstack((rgb[:,:,0], rgb[:,:,1], rgb[:,:,2], sparse_depth))
         rgbd = np.append(rgb, np.expand_dims(sparse_depth, axis=2), axis=2)
         return rgbd
@@ -170,13 +167,13 @@ class NYUDataset(data.Dataset):
         # color normalization
         # rgb_tensor = normalize_rgb(rgb_tensor)
         # rgb_np = normalize_np(rgb_np)
-        
+
         if self.modality == 'rgb':
             input_np = rgb_np
         elif self.modality == 'rgbd':
-            input_np = self.create_rgbd(rgb_np, depth_np, self.num_samples)
+            input_np = self.create_rgbd(rgb_np, depth_np)
         elif self.modality == 'd':
-            input_np = self.create_sparse_depth(depth_np, self.num_samples)
+            input_np = self.create_sparse_depth(rgb_np, depth_np)
 
         input_tensor = to_tensor(input_np)
         while input_tensor.dim() < 3:
