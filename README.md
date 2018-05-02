@@ -14,6 +14,9 @@ This repo can be used for training and testing of
 
 The original Torch implementation of the paper can be found [here](https://github.com/fangchangma/sparse-to-dense). This PyTorch version is under development and is subject to major modifications in the future. 
 
+## Thanks
+Thanks to [Tim](https://github.com/timethy) for his contribution.
+
 ## Contents
 0. [Requirements](#requirements)
 0. [Training](#training)
