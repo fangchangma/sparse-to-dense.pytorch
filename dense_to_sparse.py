@@ -57,7 +57,10 @@ class DSOSampling(DenseToSparse):
                 .reshape(h, w, r1, c1))
 
     def dense_to_sparse(self, rgb, depth):
-        gray = rgb2grayscale(rgb)
+        if(rgb.ndim > 2):
+            gray = rgb2grayscale(rgb)
+        else:
+            gray = rgb
 
         height = gray.shape[0]
         width = gray.shape[1]

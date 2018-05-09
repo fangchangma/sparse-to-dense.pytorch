@@ -36,6 +36,10 @@ def make_dataset(dir, class_to_idx):
 
     return images
 
+def rgb2grayscale(rgb):
+    gray = rgb[:, :, 0] * 0.2989 + rgb[:, :, 1] * 0.587 + rgb[:, :, 2] * 0.114
+    return np.repeat(gray[:, :, np.newaxis], 3, axis=2)
+
 def h5_loader(path):
     h5f = h5py.File(path, "r")
     rgb = np.array(h5f['rgb'])
@@ -76,6 +80,8 @@ def train_transform(rgb, depth, sparse_depth):
     rgb_np = color_jitter(rgb_np)
 
     rgb_np = np.asfarray(rgb_np, dtype='float') / 255
+    rgb_np = rgb2grayscale(rgb_np)
+
     depth_np = transform(depth_np)
     sparse_depth_np = transform(sparse_depth_np)
 
@@ -91,14 +97,11 @@ def val_transform(rgb, depth, sparse_depth):
     ])
     rgb_np = transform(rgb)
     rgb_np = np.asfarray(rgb_np, dtype='float') / 255
+    rgb_np = rgb2grayscale(rgb_np)
     depth_np = transform(depth_np)
     sparse_depth_np = transform(sparse_depth_np)
 
     return rgb_np, depth_np, sparse_depth_np
-
-def rgb2grayscale(rgb):
-    return rgb[:,:,0] * 0.2989 + rgb[:,:,1] * 0.587 + rgb[:,:,2] * 0.114
-
 
 to_tensor = transforms.ToTensor()
 
