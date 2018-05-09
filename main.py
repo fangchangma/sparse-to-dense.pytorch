@@ -211,7 +211,7 @@ def main():
         adjust_learning_rate(optimizer, epoch)
 
         # train for one epoch
-        # train(train_loader, model, criterion, optimizer, epoch)
+        train(train_loader, model, criterion, optimizer, epoch)
 
         # evaluate on validation set
         result, img_merge = validate(val_loader, model, epoch)
