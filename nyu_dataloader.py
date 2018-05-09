@@ -56,6 +56,12 @@ def train_transform(rgb, depth, sparse_depth):
     angle = np.random.uniform(-5.0, 5.0) # random rotation degrees
     do_flip = np.random.uniform(0.0, 1.0) < 0.5 # random horizontal flip
 
+    prob = 0.01
+    mask = np.random.uniform(0, 1, depth.shape) < prob
+    noise = np.random.standard_normal(depth.shape)
+    sparse_depth_np[mask] = sparse_depth_np[mask] + noise[mask]
+    sparse_depth_np[sparse_depth_np < 0] = 0
+
     # perform 1st part of data augmentation
     transform = transforms.Compose([
         transforms.Resize(250.0 / iheight), # this is for computational efficiency, since rotation is very slow
