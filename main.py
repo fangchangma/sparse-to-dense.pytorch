@@ -16,14 +16,14 @@ import torch.utils.data
 from nyu_dataloader import NYUDataset
 from models import Decoder, ResNet
 from metrics import AverageMeter, Result
-from dense_to_sparse import UniformSampling, SimulatedStereo
+from dense_to_sparse import UniformSampling, SimulatedStereo, DSOSampling
 import criteria
 import utils
 
 model_names = ['resnet18', 'resnet50']
 loss_names = ['l1', 'l2']
 data_names = ['nyudepthv2']
-sparsifier_names = [x.name for x in [UniformSampling, SimulatedStereo]]
+sparsifier_names = [x.name for x in [UniformSampling, SimulatedStereo, DSOSampling]]
 decoder_names = Decoder.names
 modality_names = NYUDataset.modality_names
 
@@ -51,6 +51,12 @@ parser.add_argument('-s', '--num-samples', default=0, type=int, metavar='N',
                     help='number of sparse depth samples (default: 0)')
 parser.add_argument('--max-depth', default=-1.0, type=float, metavar='D',
                     help='cut-off depth of sparsifier, negative values means infinity (default: inf [m])')
+parser.add_argument('--grad-th', default=7, type=int, metavar='N',
+                    help='defines the starting base gradient threshold used for determining possible keypoints as defined in DSO (default: 7)')
+parser.add_argument('--window-size', default=32, type=int, metavar='N',
+                    help='defines the size of a region for calculating region based gradient threshold as defined in DSO (default: 32)')
+parser.add_argument('--sub-window-size', default=2, type=int, metavar='N',
+                    help='starting window-size for maximum gradient search as described in DSO (default: 2)')
 parser.add_argument('--sparsifier', metavar='SPARSIFIER', default=UniformSampling.name,
                     choices=sparsifier_names,
                     help='sparsifier: ' +
@@ -111,6 +117,8 @@ def main():
         sparsifier = UniformSampling(num_samples=args.num_samples, max_depth=max_depth)
     elif args.sparsifier == SimulatedStereo.name:
         sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
+    elif args.sparsifier == DSOSampling.name:
+        sparsifier = DSOSampling(num_samples=args.num_samples, grad_th=args.grad_th, window_size=args.window_size, sub_window_size=args.sub_window_size)
 
     # create results folder, if not already exists
     output_directory = os.path.join('results',
@@ -211,7 +219,7 @@ def main():
         adjust_learning_rate(optimizer, epoch)
 
         # train for one epoch
-        # train(train_loader, model, criterion, optimizer, epoch)
+        train(train_loader, model, criterion, optimizer, epoch)
 
         # evaluate on validation set
         result, img_merge = validate(val_loader, model, epoch)

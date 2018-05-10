@@ -36,6 +36,10 @@ def make_dataset(dir, class_to_idx):
 
     return images
 
+def rgb2grayscale(rgb):
+    gray = rgb[:, :, 0] * 0.2989 + rgb[:, :, 1] * 0.587 + rgb[:, :, 2] * 0.114
+    return np.repeat(gray[:, :, np.newaxis], 3, axis=2)
+
 def h5_loader(path):
     h5f = h5py.File(path, "r")
     rgb = np.array(h5f['rgb'])
@@ -48,12 +52,19 @@ iheight, iwidth = 480, 640 # raw image size
 oheight, owidth = 228, 304 # image size after pre-processing
 color_jitter = transforms.ColorJitter(0.4, 0.4, 0.4)
 
-def train_transform(rgb, depth):
+def train_transform(rgb, depth, sparse_depth):
     s = np.random.uniform(1.0, 1.5) # random scaling
     # print("scale factor s={}".format(s))
     depth_np = depth / s
+    sparse_depth_np = sparse_depth / s
     angle = np.random.uniform(-5.0, 5.0) # random rotation degrees
     do_flip = np.random.uniform(0.0, 1.0) < 0.5 # random horizontal flip
+
+    prob = 0.01
+    mask = np.random.uniform(0, 1, depth.shape) < prob
+    noise = np.random.standard_normal(depth.shape)
+    sparse_depth_np[mask] = sparse_depth_np[mask] + noise[mask]
+    sparse_depth_np[sparse_depth_np < 0] = 0
 
     # perform 1st part of data augmentation
     transform = transforms.Compose([
@@ -69,13 +80,16 @@ def train_transform(rgb, depth):
     rgb_np = color_jitter(rgb_np)
 
     rgb_np = np.asfarray(rgb_np, dtype='float') / 255
+    rgb_np = rgb2grayscale(rgb_np)
+
     depth_np = transform(depth_np)
+    sparse_depth_np = transform(sparse_depth_np)
 
-    return rgb_np, depth_np
+    return rgb_np, depth_np, sparse_depth_np
 
-def val_transform(rgb, depth):
+def val_transform(rgb, depth, sparse_depth):
     depth_np = depth
-
+    sparse_depth_np = sparse_depth
     # perform 1st part of data augmentation
     transform = transforms.Compose([
         transforms.Resize(240.0 / iheight),
@@ -83,13 +97,11 @@ def val_transform(rgb, depth):
     ])
     rgb_np = transform(rgb)
     rgb_np = np.asfarray(rgb_np, dtype='float') / 255
+    rgb_np = rgb2grayscale(rgb_np)
     depth_np = transform(depth_np)
+    sparse_depth_np = transform(sparse_depth_np)
 
-    return rgb_np, depth_np
-
-def rgb2grayscale(rgb):
-    return rgb[:,:,0] * 0.2989 + rgb[:,:,1] * 0.587 + rgb[:,:,2] * 0.114
-
+    return rgb_np, depth_np, sparse_depth_np
 
 to_tensor = transforms.ToTensor()
 
@@ -132,9 +144,7 @@ class NYUDataset(data.Dataset):
             sparse_depth[mask_keep] = depth[mask_keep]
             return sparse_depth
 
-    def create_rgbd(self, rgb, depth):
-        sparse_depth = self.create_sparse_depth(rgb, depth)
-        # rgbd = np.dstack((rgb[:,:,0], rgb[:,:,1], rgb[:,:,2], sparse_depth))
+    def create_rgbd(self, rgb, sparse_depth):
         rgbd = np.append(rgb, np.expand_dims(sparse_depth, axis=2), axis=2)
         return rgbd
 
@@ -159,8 +169,16 @@ class NYUDataset(data.Dataset):
             tuple: (input_tensor, depth_tensor, input_np, depth_np) 
         """
         rgb, depth = self.__getraw__(index)
+
+        if self.sparsifier is None:
+            sparse_depth = depth
+        else:
+            mask_keep = self.sparsifier.dense_to_sparse(rgb, depth)
+            sparse_depth = np.zeros(depth.shape)
+            sparse_depth[mask_keep] = depth[mask_keep]
+
         if self.transform is not None:
-            rgb_np, depth_np = self.transform(rgb, depth)
+            rgb_np, depth_np, sparse_depth_np = self.transform(rgb, depth, sparse_depth)
         else:
             raise(RuntimeError("transform not defined"))
 
@@ -171,9 +189,9 @@ class NYUDataset(data.Dataset):
         if self.modality == 'rgb':
             input_np = rgb_np
         elif self.modality == 'rgbd':
-            input_np = self.create_rgbd(rgb_np, depth_np)
+            input_np = self.create_rgbd(rgb_np, sparse_depth_np)
         elif self.modality == 'd':
-            input_np = self.create_sparse_depth(rgb_np, depth_np)
+            input_np = sparse_depth_np
 
         input_tensor = to_tensor(input_np)
         while input_tensor.dim() < 3:
