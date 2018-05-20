@@ -67,7 +67,7 @@ parser.add_argument('--epochs', default=15, type=int, metavar='N',
                     help='number of total epochs to run (default: 15)')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('-c', '--criterion', metavar='LOSS', default='l1', 
+parser.add_argument('-c', '--criterion', metavar='LOSS', default='l1',
                     choices=loss_names,
                     help='loss function: ' +
                         ' | '.join(loss_names) +
@@ -86,24 +86,27 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
-parser.add_argument('--pretrained', dest='pretrained', action='store_true',
+parser.add_argument('--pretrained', dest='pretrained', choices=['True', 'False'],
                     default=True, help='use ImageNet pre-trained weights (default: True)')
 
-fieldnames = ['mse', 'rmse', 'absrel', 'lg10', 'mae', 
-                'delta1', 'delta2', 'delta3', 
+args = parser.parse_args()
+if args.modality == 'rgb' and args.num_samples != 0:
+    print("number of samples is forced to be 0 when input modality is rgb")
+    args.num_samples = 0
+if args.modality == 'rgb' and args.max_depth != 0.0:
+    print("max depth is forced to be 0.0 when input modality is rgb/rgbd")
+    args.max_depth = 0.0
+args.pretrained = (args.pretrained == "True")
+print(args)
+
+fieldnames = ['mse', 'rmse', 'absrel', 'lg10', 'mae',
+                'delta1', 'delta2', 'delta3',
                 'data_time', 'gpu_time']
 best_result = Result()
 best_result.set_to_worst()
 
 def main():
     global args, best_result, output_directory, train_csv, test_csv
-    args = parser.parse_args()
-    if args.modality == 'rgb' and args.num_samples != 0:
-        print("number of samples is forced to be 0 when input modality is rgb")
-        args.num_samples = 0
-    if args.modality == 'rgb' and args.max_depth != 0.0:
-        print("max depth is forced to be 0.0 when input modality is rgb/rgbd")
-        args.max_depth = 0.0
 
     sparsifier = None
     max_depth = args.max_depth if args.max_depth >= 0.0 else np.inf
@@ -121,7 +124,7 @@ def main():
     train_csv = os.path.join(output_directory, 'train.csv')
     test_csv = os.path.join(output_directory, 'test.csv')
     best_txt = os.path.join(output_directory, 'best.txt')
-    
+
     # define loss function (criterion) and optimizer
     if args.criterion == 'l2':
         criterion = criteria.MaskedMSELoss().cuda()
@@ -195,10 +198,10 @@ def main():
                                     weight_decay=args.weight_decay)
 
         # create new csv files with only header
-        with open(train_csv, 'w') as csvfile:   
+        with open(train_csv, 'w') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
-        with open(test_csv, 'w') as csvfile:   
+        with open(test_csv, 'w') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
 
@@ -211,7 +214,7 @@ def main():
         adjust_learning_rate(optimizer, epoch)
 
         # train for one epoch
-        # train(train_loader, model, criterion, optimizer, epoch)
+        train(train_loader, model, criterion, optimizer, epoch)
 
         # evaluate on validation set
         result, img_merge = validate(val_loader, model, epoch)
@@ -226,7 +229,7 @@ def main():
             if img_merge is not None:
                 img_filename = output_directory + '/comparison_best.png'
                 utils.save_image(img_merge, img_filename)
-       
+
         save_checkpoint({
             'epoch': epoch,
             'arch': args.arch,
@@ -278,14 +281,14 @@ def train(train_loader, model, criterion, optimizer, epoch):
                   'Delta1={result.delta1:.3f}({average.delta1:.3f}) '
                   'REL={result.absrel:.3f}({average.absrel:.3f}) '
                   'Lg10={result.lg10:.3f}({average.lg10:.3f}) '.format(
-                  epoch, i+1, len(train_loader), data_time=data_time, 
+                  epoch, i+1, len(train_loader), data_time=data_time,
                   gpu_time=gpu_time, result=result, average=average_meter.average()))
 
     avg = average_meter.average()
-    with open(train_csv, 'a') as csvfile: 
+    with open(train_csv, 'a') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writerow({'mse': avg.mse, 'rmse': avg.rmse, 'absrel': avg.absrel, 'lg10': avg.lg10,
-            'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3, 
+            'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3,
             'gpu_time': avg.gpu_time, 'data_time': avg.data_time})
 
 
@@ -364,10 +367,10 @@ def validate(val_loader, model, epoch, write_to_file=True):
         average=avg, time=avg.gpu_time))
 
     if write_to_file:
-        with open(test_csv, 'a') as csvfile: 
+        with open(test_csv, 'a') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writerow({'mse': avg.mse, 'rmse': avg.rmse, 'absrel': avg.absrel, 'lg10': avg.lg10,
-                'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3, 
+                'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3,
                 'data_time': avg.data_time, 'gpu_time': avg.gpu_time})
 
     return avg, img_merge
