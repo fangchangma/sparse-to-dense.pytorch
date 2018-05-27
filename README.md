@@ -42,7 +42,7 @@ Thanks to [Tim](https://github.com/timethy) for his contribution.
 	cd ..
 	```
 ## Training
-The training scripts come with several options, which can be listed with the `--help` flag. Currently this repo only supports training on the NYU dataset, and deconvolution with different kernel sizes (no `upconv` or `upproj` since we found them to be inefficient compared with using simple `deconv` with larger kernel sizes). 
+The training scripts come with several options, which can be listed with the `--help` flag. Currently this repo only supports training on the NYU dataset. 
 ```bash
 python3 main.py --help
 ```
