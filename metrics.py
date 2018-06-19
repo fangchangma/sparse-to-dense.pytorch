@@ -35,16 +35,16 @@ class Result(object):
 
         abs_diff = (output - target).abs()
 
-        self.mse = (torch.pow(abs_diff, 2)).mean()
+        self.mse = float((torch.pow(abs_diff, 2)).mean())
         self.rmse = math.sqrt(self.mse)
-        self.mae = abs_diff.mean()
-        self.lg10 = (log10(output) - log10(target)).abs().mean()
-        self.absrel = (abs_diff / target).mean()
+        self.mae = float(abs_diff.mean())
+        self.lg10 = float((log10(output) - log10(target)).abs().mean())
+        self.absrel = float((abs_diff / target).mean())
 
         maxRatio = torch.max(output / target, target / output)
-        self.delta1 = (maxRatio < 1.25).float().mean()
-        self.delta2 = (maxRatio < 1.25 ** 2).float().mean()
-        self.delta3 = (maxRatio < 1.25 ** 3).float().mean()
+        self.delta1 = float((maxRatio < 1.25).float().mean())
+        self.delta2 = float((maxRatio < 1.25 ** 2).float().mean())
+        self.delta3 = float((maxRatio < 1.25 ** 3).float().mean())
         self.data_time = 0
         self.gpu_time = 0
 
@@ -52,7 +52,7 @@ class Result(object):
         inv_target = 1 / target
         abs_inv_diff = (inv_output - inv_target).abs()
         self.irmse = math.sqrt((torch.pow(abs_inv_diff, 2)).mean())
-        self.imae = abs_inv_diff.mean()
+        self.imae = float(abs_inv_diff.mean())
 
 
 class AverageMeter(object):

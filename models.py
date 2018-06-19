@@ -196,7 +196,7 @@ class ResNet(nn.Module):
 
         # setting bias=true doesn't improve accuracy
         self.conv3 = nn.Conv2d(num_channels//32,out_channels,kernel_size=3,stride=1,padding=1,bias=False)
-        self.bilinear = nn.Upsample(size=(oheight, owidth), mode='bilinear')
+        self.bilinear = nn.Upsample(size=(oheight, owidth), mode='bilinear', align_corners=True)
 
         # weight init
         self.conv2.apply(weights_init)

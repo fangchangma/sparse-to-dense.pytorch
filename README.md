@@ -26,6 +26,7 @@ Thanks to [Tim](https://github.com/timethy) for his contribution.
 0. [Citation](#citation)
 
 ## Requirements
+This code was tested with Python 3 and PyTorch 0.4.0.
 - Install [PyTorch](http://pytorch.org/) on a machine with CUDA GPU. 
 - Install the [HDF5](https://en.wikipedia.org/wiki/Hierarchical_Data_Format) and other dependencies (files in our pre-processed datasets are in HDF5 formats).
 	```bash
@@ -58,7 +59,7 @@ Training results will be saved under the `results` folder.
 ## Testing
 To test the performance of a trained model, simply run main.py with the `-e` option, along with other model options. For instance,
 ```bash
-python3 main.py -e
+python3 main.py -e -a resnet50 -d deconv3 -m rgbd -s 100
 ```
 
 ## Trained Models

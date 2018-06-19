@@ -1,6 +1,5 @@
 import argparse
 import os
-import shutil
 import time
 import sys
 import csv
@@ -86,8 +85,9 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
-parser.add_argument('--pretrained', dest='pretrained', choices=['True', 'False'],
-                    default=True, help='use ImageNet pre-trained weights (default: True)')
+parser.add_argument('--no-pretrain', dest='pretrained', action='store_false',
+                    help='not to use ImageNet pre-trained weights')
+parser.set_defaults(pretrained=True)
 
 args = parser.parse_args()
 if args.modality == 'rgb' and args.num_samples != 0:
@@ -96,7 +96,6 @@ if args.modality == 'rgb' and args.num_samples != 0:
 if args.modality == 'rgb' and args.max_depth != 0.0:
     print("max depth is forced to be 0.0 when input modality is rgb/rgbd")
     args.max_depth = 0.0
-args.pretrained = (args.pretrained == "True")
 print(args)
 
 fieldnames = ['mse', 'rmse', 'absrel', 'lg10', 'mae',
@@ -116,9 +115,7 @@ def main():
         sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
 
     # create results folder, if not already exists
-    output_directory = os.path.join('results',
-        '{}.sparsifier={}.modality={}.arch={}.decoder={}.criterion={}.lr={}.bs={}'.
-                                    format(args.data, sparsifier, args.modality, args.arch, args.decoder, args.criterion, args.lr, args.batch_size))
+    output_directory = utils.get_output_directory(args)
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
     train_csv = os.path.join(output_directory, 'train.csv')
@@ -154,31 +151,28 @@ def main():
     # evaluation mode
     if args.evaluate:
         best_model_filename = os.path.join(output_directory, 'model_best.pth.tar')
-        if os.path.isfile(best_model_filename):
-            print("=> loading best model '{}'".format(best_model_filename))
-            checkpoint = torch.load(best_model_filename)
-            args.start_epoch = checkpoint['epoch']
-            best_result = checkpoint['best_result']
-            model = checkpoint['model']
-            print("=> loaded best model (epoch {})".format(checkpoint['epoch']))
-        else:
-            print("=> no best model found at '{}'".format(best_model_filename))
+        assert os.path.isfile(best_model_filename), \
+        "=> no best model found at '{}'".format(best_model_filename)
+        print("=> loading best model '{}'".format(best_model_filename))
+        checkpoint = torch.load(best_model_filename)
+        args.start_epoch = checkpoint['epoch']
+        best_result = checkpoint['best_result']
+        model = checkpoint['model']
+        print("=> loaded best model (epoch {})".format(checkpoint['epoch']))
         validate(val_loader, model, checkpoint['epoch'], write_to_file=False)
         return
 
     # optionally resume from a checkpoint
     elif args.resume:
-        if os.path.isfile(args.resume):
-            print("=> loading checkpoint '{}'".format(args.resume))
-            checkpoint = torch.load(args.resume)
-            args.start_epoch = checkpoint['epoch']+1
-            best_result = checkpoint['best_result']
-            model = checkpoint['model']
-            optimizer = checkpoint['optimizer']
-            print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
-        else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
-            return
+        assert os.path.isfile(args.resume), \
+            "=> no checkpoint found at '{}'".format(args.resume)
+        print("=> loading checkpoint '{}'".format(args.resume))
+        checkpoint = torch.load(args.resume)
+        args.start_epoch = checkpoint['epoch']+1
+        best_result = checkpoint['best_result']
+        model = checkpoint['model']
+        optimizer = checkpoint['optimizer']
+        print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
 
     # create new model
     else:
@@ -211,7 +205,7 @@ def main():
     print("=> model transferred to GPU.")
 
     for epoch in range(args.start_epoch, args.epochs):
-        adjust_learning_rate(optimizer, epoch)
+        utils.adjust_learning_rate(optimizer, epoch, args.lr)
 
         # train for one epoch
         train(train_loader, model, criterion, optimizer, epoch)
@@ -230,13 +224,14 @@ def main():
                 img_filename = output_directory + '/comparison_best.png'
                 utils.save_image(img_merge, img_filename)
 
-        save_checkpoint({
+        utils.save_checkpoint({
+            'args': args,
             'epoch': epoch,
             'arch': args.arch,
             'model': model,
             'best_result': best_result,
             'optimizer' : optimizer,
-        }, is_best, epoch)
+        }, is_best, epoch, output_directory)
 
 
 def train(train_loader, model, criterion, optimizer, epoch):
@@ -249,25 +244,22 @@ def train(train_loader, model, criterion, optimizer, epoch):
     for i, (input, target) in enumerate(train_loader):
 
         input, target = input.cuda(), target.cuda()
-        input_var = torch.autograd.Variable(input)
-        target_var = torch.autograd.Variable(target)
-        torch.cuda.synchronize()
+        # torch.cuda.synchronize()
         data_time = time.time() - end
 
-        # compute depth_pred
+        # compute pred
         end = time.time()
-        depth_pred = model(input_var)
-        loss = criterion(depth_pred, target_var)
+        pred = model(input)
+        loss = criterion(pred, target)
         optimizer.zero_grad()
         loss.backward() # compute gradient and do SGD step
         optimizer.step()
-        torch.cuda.synchronize()
+        # torch.cuda.synchronize()
         gpu_time = time.time() - end
 
         # measure accuracy and record loss
         result = Result()
-        output1 = torch.index_select(depth_pred.data, 1, torch.cuda.LongTensor([0]))
-        result.evaluate(output1, target)
+        result.evaluate(pred.data, target.data)
         average_meter.update(result, gpu_time, data_time, input.size(0))
         end = time.time()
 
@@ -275,9 +267,9 @@ def train(train_loader, model, criterion, optimizer, epoch):
             print('=> output: {}'.format(output_directory))
             print('Train Epoch: {0} [{1}/{2}]\t'
                   't_Data={data_time:.3f}({average.data_time:.3f}) '
-                  't_GPU={gpu_time:.3f}({average.gpu_time:.3f}) '
+                  't_GPU={gpu_time:.3f}({average.gpu_time:.3f})\n\t'
                   'RMSE={result.rmse:.2f}({average.rmse:.2f}) '
-                  'MAE={result.mae:.2f}({average.mae:.2f}) '
+                  'MAE={result.mae:.2f}({average.mae:.2f})\n\t'
                   'Delta1={result.delta1:.3f}({average.delta1:.3f}) '
                   'REL={result.absrel:.3f}({average.absrel:.3f}) '
                   'Lg10={result.lg10:.3f}({average.lg10:.3f}) '.format(
@@ -301,21 +293,19 @@ def validate(val_loader, model, epoch, write_to_file=True):
     end = time.time()
     for i, (input, target) in enumerate(val_loader):
         input, target = input.cuda(), target.cuda()
-        input_var = torch.autograd.Variable(input)
-        target_var = torch.autograd.Variable(target)
-        torch.cuda.synchronize()
+        # torch.cuda.synchronize()
         data_time = time.time() - end
 
         # compute output
         end = time.time()
-        depth_pred = model(input_var)
-        torch.cuda.synchronize()
+        with torch.no_grad():
+            pred = model(input)
+        # torch.cuda.synchronize()
         gpu_time = time.time() - end
 
         # measure accuracy and record loss
         result = Result()
-        output1 = torch.index_select(depth_pred.data, 1, torch.cuda.LongTensor([0]))
-        result.evaluate(output1, target)
+        result.evaluate(pred.data, target.data)
         average_meter.update(result, gpu_time, data_time, input.size(0))
         end = time.time()
 
@@ -332,14 +322,14 @@ def validate(val_loader, model, epoch, write_to_file=True):
 
             if i == 0:
                 if args.modality == 'rgbd':
-                    img_merge = utils.merge_into_row_with_gt(rgb, depth, target, depth_pred)
+                    img_merge = utils.merge_into_row_with_gt(rgb, depth, target, pred)
                 else:
-                    img_merge = utils.merge_into_row(rgb, target, depth_pred)
+                    img_merge = utils.merge_into_row(rgb, target, pred)
             elif (i < 8*skip) and (i % skip == 0):
                 if args.modality == 'rgbd':
-                    row = utils.merge_into_row_with_gt(rgb, depth, target, depth_pred)
+                    row = utils.merge_into_row_with_gt(rgb, depth, target, pred)
                 else:
-                    row = utils.merge_into_row(rgb, target, depth_pred)
+                    row = utils.merge_into_row(rgb, target, pred)
                 img_merge = utils.add_row(img_merge, row)
             elif i == 8*skip:
                 filename = output_directory + '/comparison_' + str(epoch) + '.png'
@@ -347,9 +337,9 @@ def validate(val_loader, model, epoch, write_to_file=True):
 
         if (i+1) % args.print_freq == 0:
             print('Test: [{0}/{1}]\t'
-                  't_GPU={gpu_time:.3f}({average.gpu_time:.3f})\t'
+                  't_GPU={gpu_time:.3f}({average.gpu_time:.3f})\n\t'
                   'RMSE={result.rmse:.2f}({average.rmse:.2f}) '
-                  'MAE={result.mae:.2f}({average.mae:.2f}) '
+                  'MAE={result.mae:.2f}({average.mae:.2f})\n\t'
                   'Delta1={result.delta1:.3f}({average.delta1:.3f}) '
                   'REL={result.absrel:.3f}({average.absrel:.3f}) '
                   'Lg10={result.lg10:.3f}({average.lg10:.3f}) '.format(
@@ -374,23 +364,6 @@ def validate(val_loader, model, epoch, write_to_file=True):
                 'data_time': avg.data_time, 'gpu_time': avg.gpu_time})
 
     return avg, img_merge
-
-def save_checkpoint(state, is_best, epoch):
-    checkpoint_filename = os.path.join(output_directory, 'checkpoint-' + str(epoch) + '.pth.tar')
-    torch.save(state, checkpoint_filename)
-    if is_best:
-        best_filename = os.path.join(output_directory, 'model_best.pth.tar')
-        shutil.copyfile(checkpoint_filename, best_filename)
-    if epoch > 0:
-        prev_checkpoint_filename = os.path.join(output_directory, 'checkpoint-' + str(epoch-1) + '.pth.tar')
-        if os.path.exists(prev_checkpoint_filename):
-            os.remove(prev_checkpoint_filename)
-
-def adjust_learning_rate(optimizer, epoch):
-    """Sets the learning rate to the initial LR decayed by 10 every 5 epochs"""
-    lr = args.lr * (0.1 ** (epoch // 5))
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
 
 if __name__ == '__main__':
     main()
