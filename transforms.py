@@ -376,7 +376,7 @@ class CenterCrop(object):
         # # randomized cropping
         # i = np.random.randint(i-3, i+4)
         # j = np.random.randint(j-3, j+4)
-        
+
         return i, j, th, tw
 
     def __call__(self, img):
@@ -514,3 +514,47 @@ class ColorJitter(object):
         transform = self.get_params(self.brightness, self.contrast,
                                     self.saturation, self.hue)
         return np.array(transform(pil))
+
+class Crop(object):
+    """Crops the given PIL Image to a rectangular region based on a given
+    4-tuple defining the left, upper pixel coordinated, hight and width size.
+
+    Args:
+        a tuple: (upper pixel coordinate, left pixel coordinate, hight, width)-tuple
+    """
+
+    def __init__(self, i, j, h, w):
+        """
+        i: Upper pixel coordinate.
+        j: Left pixel coordinate.
+        h: Height of the cropped image.
+        w: Width of the cropped image.
+        """
+        self.i = i
+        self.j = j
+        self.h = h
+        self.w = w
+
+    def __call__(self, img):
+        """
+        Args:
+            img (numpy.ndarray (C x H x W)): Image to be cropped.
+        Returns:
+            img (numpy.ndarray (C x H x W)): Cropped image.
+        """
+
+        i, j, h, w = self.i, self.j, self.h, self.w
+
+        if not(_is_numpy_image(img)):
+            raise TypeError('img should be ndarray. Got {}'.format(type(img)))
+        if img.ndim == 3:
+            return img[i:i + h, j:j + w, :]
+        elif img.ndim == 2:
+            return img[i:i + h, j:j + w]
+        else:
+            raise RuntimeError(
+                'img should be ndarray with 2 or 3 dimensions. Got {}'.format(img.ndim))
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(i={0},j={1},h={2},w={3})'.format(
+            self.i, self.j, self.h, self.w)
