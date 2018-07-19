@@ -4,6 +4,7 @@ import time
 import sys
 import csv
 import numpy as np
+import errno
 
 import torch
 import torch.nn as nn
@@ -13,6 +14,7 @@ import torch.optim
 import torch.utils.data
 
 from nyu_dataloader import NYUDataset
+from kitti_dataloader import KITTIDataset
 from models import Decoder, ResNet
 from metrics import AverageMeter, Result
 from dense_to_sparse import UniformSampling, SimulatedStereo
@@ -21,7 +23,7 @@ import utils
 
 model_names = ['resnet18', 'resnet50']
 loss_names = ['l1', 'l2']
-data_names = ['nyudepthv2']
+data_names = ['nyudepthv2', 'kitti']
 sparsifier_names = [x.name for x in [UniformSampling, SimulatedStereo]]
 decoder_names = Decoder.names
 modality_names = NYUDataset.modality_names
@@ -134,15 +136,27 @@ def main():
     traindir = os.path.join('data', args.data, 'train')
     valdir = os.path.join('data', args.data, 'val')
 
-    train_dataset = NYUDataset(traindir, type='train',
-        modality=args.modality, sparsifier=sparsifier)
+    if args.data == 'nyudepthv2':
+        train_dataset = NYUDataset(traindir, type='train',
+            modality=args.modality, sparsifier=sparsifier)
+        val_dataset = NYUDataset(valdir, type='val',
+            modality=args.modality, sparsifier=sparsifier)
+
+    elif args.data == 'kitti':
+        train_dataset = KITTIDataset(traindir, type='train',
+            modality=args.modality, sparsifier=sparsifier)
+        val_dataset = KITTIDataset(valdir, type='val',
+            modality=args.modality, sparsifier=sparsifier)
+
+    else:
+        raise RuntimeError('Dataset not found.' +
+                           'The dataset must be either of nyudepthv2 or kitti.')
+
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True,
         num_workers=args.workers, pin_memory=True, sampler=None)
 
     # set batch size to be 1 for validation
-    val_dataset = NYUDataset(valdir, type='val',
-        modality=args.modality, sparsifier=sparsifier)
     val_loader = torch.utils.data.DataLoader(val_dataset,
         batch_size=1, shuffle=False, num_workers=args.workers, pin_memory=True)
 
