@@ -23,17 +23,13 @@ def find_classes(dir):
 
 
 def make_dataset(dir, class_to_idx):
-    print("make dataset was called.")
     images = []
     dir = os.path.expanduser(dir)
-    print(dir)
     for target in sorted(os.listdir(dir)):
-        # print(target)
         d = os.path.join(dir, target)
 
         if not os.path.isdir(d):
             continue
-        print(len(sorted(os.walk(d))))
         for root, _, fnames in sorted(os.walk(d)):
             for fname in sorted(fnames):
                 if is_image_file(fname):
