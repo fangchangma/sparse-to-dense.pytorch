@@ -1,21 +1,21 @@
 sparse-to-dense.pytorch
 ============================
 
-This repo implements the training and testing of deep regression neural networks for ["Sparse-to-Dense: Depth Prediction from Sparse Depth Samples and a Single Image"](https://arxiv.org/pdf/1709.07492.pdf) by [Fangchang Ma](http://www.mit.edu/~fcma) and [Sertac Karaman](http://karaman.mit.edu/) at MIT. A video demonstration is available on [YouTube](https://youtu.be/vNIIT_M7x7Y). 
+This repo implements the training and testing of deep regression neural networks for ["Sparse-to-Dense: Depth Prediction from Sparse Depth Samples and a Single Image"](https://arxiv.org/pdf/1709.07492.pdf) by [Fangchang Ma](http://www.mit.edu/~fcma) and [Sertac Karaman](http://karaman.mit.edu/) at MIT. A video demonstration is available on [YouTube](https://youtu.be/vNIIT_M7x7Y).
 <p align="center">
 	<img src="http://www.mit.edu/~fcma/images/ICRA2018.png" alt="photo not available" width="50%" height="50%">
 	<img src="https://j.gifs.com/Z4qDow.gif" alt="photo not available" height="50%">
 </p>
 
-This repo can be used for training and testing of 
+This repo can be used for training and testing of
 - RGB (or grayscale image) based depth prediction
 - sparse depth based depth prediction
 - RGBd (i.e., both RGB and sparse depth) based depth prediction
 
-The original Torch implementation of the paper can be found [here](https://github.com/fangchangma/sparse-to-dense). This PyTorch version is under development and is subject to major modifications in the future. 
+The original Torch implementation of the paper can be found [here](https://github.com/fangchangma/sparse-to-dense).
 
 ## Thanks
-Thanks to [Tim](https://github.com/timethy) and [Akari](https://github.com/AkariAsai) for their contribution.
+Thanks to [Tim](https://github.com/timethy) and [Akari](https://github.com/AkariAsai) for their contributions.
 
 ## Contents
 0. [Requirements](#requirements)
@@ -27,30 +27,31 @@ Thanks to [Tim](https://github.com/timethy) and [Akari](https://github.com/Akari
 
 ## Requirements
 This code was tested with Python 3 and PyTorch 0.4.0.
-- Install [PyTorch](http://pytorch.org/) on a machine with CUDA GPU. 
+- Install [PyTorch](http://pytorch.org/) on a machine with CUDA GPU.
 - Install the [HDF5](https://en.wikipedia.org/wiki/Hierarchical_Data_Format) and other dependencies (files in our pre-processed datasets are in HDF5 formats).
 	```bash
 	sudo apt-get update
 	sudo apt-get install -y libhdf5-serial-dev hdf5-tools
-	pip install h5py matplotlib imageio scikit-image
+	pip3 install h5py matplotlib imageio scikit-image opencv-python
 	```
-- Download the preprocessed [NYU Depth V2](http://cs.nyu.edu/~silberman/datasets/nyu_depth_v2.html) dataset in HDF5 formats, and place them under the `data` folder. The downloading process might take an hour or so. The NYU dataset requires 32G of storage space.
+- Download the preprocessed [NYU Depth V2](http://cs.nyu.edu/~silberman/datasets/nyu_depth_v2.html) and/or [KITTI Odometry](http://www.cvlibs.net/datasets/kitti/eval_odometry.php) dataset in HDF5 formats, and place them under the `data` folder. The downloading process might take an hour or so. The NYU dataset requires 32G of storage space, and KITTI requires 81G.
 	```bash
-	mkdir data
-	cd data
-	wget http://datasets.lids.mit.edu/sparse-to-dense/data/nyudepthv2.tar.gz 
-	tar -xvf nyudepthv2.tar.gz && rm -f nyudepthv2.tar.gz 
+	mkdir data; cd data
+	wget http://datasets.lids.mit.edu/sparse-to-dense/data/nyudepthv2.tar.gz
+	tar -xvf nyudepthv2.tar.gz && rm -f nyudepthv2.tar.gz
+	wget http://datasets.lids.mit.edu/sparse-to-dense/data/kitti.tar.gz
+ 	tar -xvf kitti.tar.gz && rm -f kitti.tar.gz
 	cd ..
 	```
 ## Training
-The training scripts come with several options, which can be listed with the `--help` flag. Currently this repo only supports training on the NYU dataset. 
+The training scripts come with several options, which can be listed with the `--help` flag. Currently this repo only supports training on the NYU dataset.
 ```bash
 python3 main.py --help
 ```
 
-For instance, run the following command to train a network with ResNet50 as the encoder, deconvolutions of kernel size 3 as the decoder, and both RGB and 100 random sparse depth samples as the input to the network. 
+For instance, run the following command to train a network with ResNet50 as the encoder, deconvolutions of kernel size 3 as the decoder, and both RGB and 100 random sparse depth samples as the input to the network.
 ```bash
-python3 main.py -a resnet50 -d deconv3 -m rgbd -s 100
+python3 main.py -a resnet50 -d deconv3 -m rgbd -s 100 -data nyudepthv2
 ```
 
 Training results will be saved under the `results` folder.
@@ -59,14 +60,14 @@ Training results will be saved under the `results` folder.
 ## Testing
 To test the performance of a trained model, simply run main.py with the `-e` option, along with other model options. For instance,
 ```bash
-python3 main.py -e -a resnet50 -d deconv3 -m rgbd -s 100
+python3 main.py -e -a resnet50 -d deconv3 -m rgbd -s 100 -data nyudepthv2
 ```
 
 ## Trained Models
-Trained models will be released later. 
+Trained models will be released later.
 
 ## Benchmark
-The following numbers are from the original Torch repo. 
+The following numbers are from the original Torch repo.
 - Error metrics on NYU Depth v2:
 
 	| RGB     |  rms  |  rel  | delta1 | delta2 | delta3 |
@@ -107,14 +108,20 @@ The following numbers are from the original Torch repo.
 
 	Note: our networks are trained on the KITTI odometry dataset, using only sparse labels from laser measurements.
 
-## Citation 
-If you use our code or method in your work, please cite:
+## Citation
+If you use our code or method in your work, please consider citing the following:
 
 	@article{Ma2017SparseToDense,
-	  title={Sparse-to-Dense: Depth Prediction from Sparse Depth Samples and a Single Image},
-	  author={Ma, Fangchang and Karaman, Sertac},
-	  journal={arXiv preprint arXiv:1709.07492},
-	  year={2017}
+		title={Sparse-to-Dense: Depth Prediction from Sparse Depth Samples and a Single Image},
+		author={Ma, Fangchang and Karaman, Sertac},
+		booktitle={ICRA},
+		year={2018}
+	}
+	@article{ma2018self,
+		title={Self-supervised Sparse-to-Dense: Self-supervised Depth Completion from LiDAR and Monocular Camera},
+		author={Ma, Fangchang and Cavalheiro, Guilherme Venturelli and Karaman, Sertac},
+		journal={arXiv preprint arXiv:1807.00275},
+		year={2018}
 	}
 
 Please direct any questions to [Fangchang Ma](http://www.mit.edu/~fcma) at fcma@mit.edu.

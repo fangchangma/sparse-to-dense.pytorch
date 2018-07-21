@@ -2,11 +2,9 @@ import numpy as np
 import dataloaders.transforms as transforms
 from dataloaders.dataloader import MyDataloader
 
-color_jitter = transforms.ColorJitter(0.4, 0.4, 0.4)
-
 class KITTIDataset(MyDataloader):
     def __init__(self, root, type, sparsifier=None, modality='rgb'):
-        super(KITTIDataset, self).__init__(root, type, sparsifier=None, modality='rgb')
+        super(KITTIDataset, self).__init__(root, type, sparsifier, modality)
         self.output_size = (228, 912)
 
     def train_transform(self, rgb, depth):
@@ -24,7 +22,7 @@ class KITTIDataset(MyDataloader):
             transforms.HorizontalFlip(do_flip)
         ])
         rgb_np = transform(rgb)
-        rgb_np = color_jitter(rgb_np) # random color jittering
+        rgb_np = self.color_jitter(rgb_np) # random color jittering
         rgb_np = np.asfarray(rgb_np, dtype='float') / 255
         # Scipy affine_transform produced RuntimeError when the depth map was
         # given as a 'numpy.ndarray'

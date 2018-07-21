@@ -45,6 +45,7 @@ to_tensor = transforms.ToTensor()
 
 class MyDataloader(data.Dataset):
     modality_names = ['rgb', 'rgbd', 'd'] # , 'g', 'gd'
+    color_jitter = transforms.ColorJitter(0.4, 0.4, 0.4)
 
     def __init__(self, root, type, sparsifier=None, modality='rgb', loader=h5_loader):
         classes, class_to_idx = find_classes(root)
