@@ -1,103 +1,20 @@
-import argparse
 import os
 import time
-import sys
 import csv
 import numpy as np
-import errno
 
 import torch
-import torch.nn as nn
-import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim
-import torch.utils.data
+cudnn.benchmark = True
 
-from nyu_dataloader import NYUDataset
-from kitti_dataloader import KITTIDataset
-from models import Decoder, ResNet
+from models import ResNet
 from metrics import AverageMeter, Result
-from dense_to_sparse import UniformSampling, SimulatedStereo
+from dataloaders.dense_to_sparse import UniformSampling, SimulatedStereo
 import criteria
 import utils
 
-model_names = ['resnet18', 'resnet50']
-loss_names = ['l1', 'l2']
-data_names = ['nyudepthv2', 'kitti']
-sparsifier_names = [x.name for x in [UniformSampling, SimulatedStereo]]
-decoder_names = Decoder.names
-modality_names = NYUDataset.modality_names
-
-cudnn.benchmark = True
-
-parser = argparse.ArgumentParser(description='Sparse-to-Dense Training')
-# parser.add_argument('--data', metavar='DIR', help='path to dataset',
-#                     default="data/NYUDataset")
-parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18',
-                    choices=model_names,
-                    help='model architecture: ' +
-                        ' | '.join(model_names) +
-                        ' (default: resnet18)')
-parser.add_argument('--data', metavar='DATA', default='nyudepthv2',
-                    choices=data_names,
-                    help='dataset: ' +
-                        ' | '.join(data_names) +
-                        ' (default: nyudepthv2)')
-parser.add_argument('--modality', '-m', metavar='MODALITY', default='rgb',
-                    choices=modality_names,
-                    help='modality: ' +
-                        ' | '.join(modality_names) +
-                        ' (default: rgb)')
-parser.add_argument('-s', '--num-samples', default=0, type=int, metavar='N',
-                    help='number of sparse depth samples (default: 0)')
-parser.add_argument('--max-depth', default=-1.0, type=float, metavar='D',
-                    help='cut-off depth of sparsifier, negative values means infinity (default: inf [m])')
-parser.add_argument('--sparsifier', metavar='SPARSIFIER', default=UniformSampling.name,
-                    choices=sparsifier_names,
-                    help='sparsifier: ' +
-                         ' | '.join(sparsifier_names) +
-                         ' (default: ' + UniformSampling.name + ')')
-parser.add_argument('--decoder', '-d', metavar='DECODER', default='deconv2',
-                    choices=decoder_names,
-                    help='decoder: ' +
-                        ' | '.join(decoder_names) +
-                        ' (default: deconv2)')
-parser.add_argument('-j', '--workers', default=10, type=int, metavar='N',
-                    help='number of data loading workers (default: 10)')
-parser.add_argument('--epochs', default=15, type=int, metavar='N',
-                    help='number of total epochs to run (default: 15)')
-parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
-                    help='manual epoch number (useful on restarts)')
-parser.add_argument('-c', '--criterion', metavar='LOSS', default='l1',
-                    choices=loss_names,
-                    help='loss function: ' +
-                        ' | '.join(loss_names) +
-                        ' (default: l1)')
-parser.add_argument('-b', '--batch-size', default=8, type=int,
-                    help='mini-batch size (default: 8)')
-parser.add_argument('--lr', '--learning-rate', default=0.01, type=float,
-                    metavar='LR', help='initial learning rate (default 0.01)')
-parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
-                    help='momentum')
-parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
-                    metavar='W', help='weight decay (default: 1e-4)')
-parser.add_argument('--print-freq', '-p', default=10, type=int,
-                    metavar='N', help='print frequency (default: 10)')
-parser.add_argument('--resume', default='', type=str, metavar='PATH',
-                    help='path to latest checkpoint (default: none)')
-parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
-                    help='evaluate model on validation set')
-parser.add_argument('--no-pretrain', dest='pretrained', action='store_false',
-                    help='not to use ImageNet pre-trained weights')
-parser.set_defaults(pretrained=True)
-
-args = parser.parse_args()
-if args.modality == 'rgb' and args.num_samples != 0:
-    print("number of samples is forced to be 0 when input modality is rgb")
-    args.num_samples = 0
-if args.modality == 'rgb' and args.max_depth != 0.0:
-    print("max depth is forced to be 0.0 when input modality is rgb/rgbd")
-    args.max_depth = 0.0
+args = utils.parse_command()
 print(args)
 
 fieldnames = ['mse', 'rmse', 'absrel', 'lg10', 'mae',
@@ -108,13 +25,6 @@ best_result.set_to_worst()
 
 def main():
     global args, best_result, output_directory, train_csv, test_csv
-
-    sparsifier = None
-    max_depth = args.max_depth if args.max_depth >= 0.0 else np.inf
-    if args.sparsifier == UniformSampling.name:
-        sparsifier = UniformSampling(num_samples=args.num_samples, max_depth=max_depth)
-    elif args.sparsifier == SimulatedStereo.name:
-        sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
 
     # create results folder, if not already exists
     output_directory = utils.get_output_directory(args)
@@ -129,7 +39,14 @@ def main():
         criterion = criteria.MaskedMSELoss().cuda()
     elif args.criterion == 'l1':
         criterion = criteria.MaskedL1Loss().cuda()
-    out_channels = 1
+
+    # sparsifier is a class for generating random sparse depth input from the ground truth
+    sparsifier = None
+    max_depth = args.max_depth if args.max_depth >= 0.0 else np.inf
+    if args.sparsifier == UniformSampling.name:
+        sparsifier = UniformSampling(num_samples=args.num_samples, max_depth=max_depth)
+    elif args.sparsifier == SimulatedStereo.name:
+        sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
 
     # Data loading code
     print("=> creating data loaders ...")
@@ -137,12 +54,14 @@ def main():
     valdir = os.path.join('data', args.data, 'val')
 
     if args.data == 'nyudepthv2':
+        from dataloaders.nyu_dataloader import NYUDataset
         train_dataset = NYUDataset(traindir, type='train',
             modality=args.modality, sparsifier=sparsifier)
         val_dataset = NYUDataset(valdir, type='val',
             modality=args.modality, sparsifier=sparsifier)
 
     elif args.data == 'kitti':
+        from dataloaders.kitti_dataloader import KITTIDataset
         train_dataset = KITTIDataset(traindir, type='train',
             modality=args.modality, sparsifier=sparsifier)
         val_dataset = KITTIDataset(valdir, type='val',
@@ -159,7 +78,6 @@ def main():
     # set batch size to be 1 for validation
     val_loader = torch.utils.data.DataLoader(val_dataset,
         batch_size=1, shuffle=False, num_workers=args.workers, pin_memory=True)
-
     print("=> data loaders created.")
 
     # evaluation mode
@@ -194,16 +112,15 @@ def main():
         print("=> creating Model ({}-{}) ...".format(args.arch, args.decoder))
         in_channels = len(args.modality)
         if args.arch == 'resnet50':
-            model = ResNet(layers=50, decoder=args.decoder, in_channels=in_channels,
-                out_channels=out_channels, pretrained=args.pretrained)
+            model = ResNet(layers=50, decoder=args.decoder, output_size=train_dataset.output_size,
+                in_channels=in_channels, pretrained=args.pretrained)
         elif args.arch == 'resnet18':
-            model = ResNet(layers=18, decoder=args.decoder, in_channels=in_channels,
-                out_channels=out_channels, pretrained=args.pretrained)
+            model = ResNet(layers=18, decoder=args.decoder, output_size=train_dataset.output_size,
+                in_channels=in_channels, pretrained=args.pretrained)
         print("=> model created.")
 
-        optimizer = torch.optim.SGD(model.parameters(), args.lr,
-                                    momentum=args.momentum,
-                                    weight_decay=args.weight_decay)
+        optimizer = torch.optim.SGD(model.parameters(), args.lr, \
+            momentum=args.momentum, weight_decay=args.weight_decay)
 
         # create new csv files with only header
         with open(train_csv, 'w') as csvfile:
@@ -213,19 +130,15 @@ def main():
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
 
-    # model = torch.nn.DataParallel(model).cuda()
+    # model = torch.nn.DataParallel(model).cuda() # for multi-gpu training
     model = model.cuda()
-    print(model)
+    # print(model)
     print("=> model transferred to GPU.")
 
     for epoch in range(args.start_epoch, args.epochs):
         utils.adjust_learning_rate(optimizer, epoch, args.lr)
-
-        # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch)
-
-        # evaluate on validation set
-        result, img_merge = validate(val_loader, model, epoch)
+        train(train_loader, model, criterion, optimizer, epoch) # train for one epoch
+        result, img_merge = validate(val_loader, model, epoch) # evaluate on validation set
 
         # remember best rmse and save checkpoint
         is_best = result.rmse < best_result.rmse
@@ -250,15 +163,12 @@ def main():
 
 def train(train_loader, model, criterion, optimizer, epoch):
     average_meter = AverageMeter()
-
-    # switch to train mode
-    model.train()
-
+    model.train() # switch to train mode
     end = time.time()
     for i, (input, target) in enumerate(train_loader):
 
         input, target = input.cuda(), target.cuda()
-        # torch.cuda.synchronize()
+        torch.cuda.synchronize()
         data_time = time.time() - end
 
         # compute pred
@@ -268,7 +178,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         optimizer.zero_grad()
         loss.backward() # compute gradient and do SGD step
         optimizer.step()
-        # torch.cuda.synchronize()
+        torch.cuda.synchronize()
         gpu_time = time.time() - end
 
         # measure accuracy and record loss
@@ -283,7 +193,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
                   't_Data={data_time:.3f}({average.data_time:.3f}) '
                   't_GPU={gpu_time:.3f}({average.gpu_time:.3f})\n\t'
                   'RMSE={result.rmse:.2f}({average.rmse:.2f}) '
-                  'MAE={result.mae:.2f}({average.mae:.2f})\n\t'
+                  'MAE={result.mae:.2f}({average.mae:.2f}) '
                   'Delta1={result.delta1:.3f}({average.delta1:.3f}) '
                   'REL={result.absrel:.3f}({average.absrel:.3f}) '
                   'Lg10={result.lg10:.3f}({average.lg10:.3f}) '.format(
@@ -300,21 +210,18 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
 def validate(val_loader, model, epoch, write_to_file=True):
     average_meter = AverageMeter()
-
-    # switch to evaluate mode
-    model.eval()
-
+    model.eval() # switch to evaluate mode
     end = time.time()
     for i, (input, target) in enumerate(val_loader):
         input, target = input.cuda(), target.cuda()
-        # torch.cuda.synchronize()
+        torch.cuda.synchronize()
         data_time = time.time() - end
 
         # compute output
         end = time.time()
         with torch.no_grad():
             pred = model(input)
-        # torch.cuda.synchronize()
+        torch.cuda.synchronize()
         gpu_time = time.time() - end
 
         # measure accuracy and record loss
@@ -353,7 +260,7 @@ def validate(val_loader, model, epoch, write_to_file=True):
             print('Test: [{0}/{1}]\t'
                   't_GPU={gpu_time:.3f}({average.gpu_time:.3f})\n\t'
                   'RMSE={result.rmse:.2f}({average.rmse:.2f}) '
-                  'MAE={result.mae:.2f}({average.mae:.2f})\n\t'
+                  'MAE={result.mae:.2f}({average.mae:.2f}) '
                   'Delta1={result.delta1:.3f}({average.delta1:.3f}) '
                   'REL={result.absrel:.3f}({average.absrel:.3f}) '
                   'Lg10={result.lg10:.3f}({average.lg10:.3f}) '.format(
@@ -376,7 +283,6 @@ def validate(val_loader, model, epoch, write_to_file=True):
             writer.writerow({'mse': avg.mse, 'rmse': avg.rmse, 'absrel': avg.absrel, 'lg10': avg.lg10,
                 'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3,
                 'data_time': avg.data_time, 'gpu_time': avg.gpu_time})
-
     return avg, img_merge
 
 if __name__ == '__main__':

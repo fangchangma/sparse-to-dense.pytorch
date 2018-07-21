@@ -7,6 +7,67 @@ from PIL import Image
 
 cmap = plt.cm.viridis
 
+def parse_command():
+    model_names = ['resnet18', 'resnet50']
+    loss_names = ['l1', 'l2']
+    data_names = ['nyudepthv2', 'kitti']
+    from dataloaders.dense_to_sparse import UniformSampling, SimulatedStereo
+    sparsifier_names = [x.name for x in [UniformSampling, SimulatedStereo]]
+    from models import Decoder
+    decoder_names = Decoder.names
+    from dataloaders.dataloader import MyDataloader
+    modality_names = MyDataloader.modality_names
+
+    import argparse
+    parser = argparse.ArgumentParser(description='Sparse-to-Dense')
+    parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18', choices=model_names,
+                        help='model architecture: ' + ' | '.join(model_names) + ' (default: resnet18)')
+    parser.add_argument('--data', metavar='DATA', default='nyudepthv2',
+                        choices=data_names,
+                        help='dataset: ' + ' | '.join(data_names) + ' (default: nyudepthv2)')
+    parser.add_argument('--modality', '-m', metavar='MODALITY', default='rgb', choices=modality_names,
+                        help='modality: ' + ' | '.join(modality_names) + ' (default: rgb)')
+    parser.add_argument('-s', '--num-samples', default=0, type=int, metavar='N',
+                        help='number of sparse depth samples (default: 0)')
+    parser.add_argument('--max-depth', default=-1.0, type=float, metavar='D',
+                        help='cut-off depth of sparsifier, negative values means infinity (default: inf [m])')
+    parser.add_argument('--sparsifier', metavar='SPARSIFIER', default=UniformSampling.name, choices=sparsifier_names,
+                        help='sparsifier: ' + ' | '.join(sparsifier_names) + ' (default: ' + UniformSampling.name + ')')
+    parser.add_argument('--decoder', '-d', metavar='DECODER', default='deconv2', choices=decoder_names,
+                        help='decoder: ' + ' | '.join(decoder_names) + ' (default: deconv2)')
+    parser.add_argument('-j', '--workers', default=10, type=int, metavar='N',
+                        help='number of data loading workers (default: 10)')
+    parser.add_argument('--epochs', default=15, type=int, metavar='N',
+                        help='number of total epochs to run (default: 15)')
+    parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
+                        help='manual epoch number (useful on restarts)')
+    parser.add_argument('-c', '--criterion', metavar='LOSS', default='l1', choices=loss_names,
+                        help='loss function: ' + ' | '.join(loss_names) + ' (default: l1)')
+    parser.add_argument('-b', '--batch-size', default=8, type=int, help='mini-batch size (default: 8)')
+    parser.add_argument('--lr', '--learning-rate', default=0.01, type=float,
+                        metavar='LR', help='initial learning rate (default 0.01)')
+    parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
+                        help='momentum')
+    parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
+                        metavar='W', help='weight decay (default: 1e-4)')
+    parser.add_argument('--print-freq', '-p', default=10, type=int,
+                        metavar='N', help='print frequency (default: 10)')
+    parser.add_argument('--resume', default='', type=str, metavar='PATH',
+                        help='path to latest checkpoint (default: none)')
+    parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
+                        help='evaluate model on validation set')
+    parser.add_argument('--no-pretrain', dest='pretrained', action='store_false',
+                        help='not to use ImageNet pre-trained weights')
+    parser.set_defaults(pretrained=True)
+    args = parser.parse_args()
+    if args.modality == 'rgb' and args.num_samples != 0:
+        print("number of samples is forced to be 0 when input modality is rgb")
+        args.num_samples = 0
+    if args.modality == 'rgb' and args.max_depth != 0.0:
+        print("max depth is forced to be 0.0 when input modality is rgb/rgbd")
+        args.max_depth = 0.0
+    return args
+
 def save_checkpoint(state, is_best, epoch, output_directory):
     checkpoint_filename = os.path.join(output_directory, 'checkpoint-' + str(epoch) + '.pth.tar')
     torch.save(state, checkpoint_filename)
