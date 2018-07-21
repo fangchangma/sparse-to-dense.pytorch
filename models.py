@@ -9,7 +9,7 @@ import math
 oheight, owidth = 228, 304
 
 class Unpool(nn.Module):
-    # Unpool: 2*2 unpooling with zero padding 
+    # Unpool: 2*2 unpooling with zero padding
     def __init__(self, num_channels, stride=2):
         super(Unpool, self).__init__()
 
@@ -17,7 +17,7 @@ class Unpool(nn.Module):
         self.stride = stride
 
         # create kernel [1, 0; 0, 0]
-        self.weights = torch.autograd.Variable(torch.zeros(num_channels, 1, stride, stride).cuda()) # currently not compatible with running on CPU 
+        self.weights = torch.autograd.Variable(torch.zeros(num_channels, 1, stride, stride).cuda()) # currently not compatible with running on CPU
         self.weights[:,:,0,0] = 1
 
     def forward(self, x):
@@ -25,15 +25,15 @@ class Unpool(nn.Module):
 
 def weights_init(m):
     # Initialize filters with Gaussian random weights
-    if isinstance(m, nn.Conv2d): 
+    if isinstance(m, nn.Conv2d):
         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
         m.weight.data.normal_(0, math.sqrt(2. / n))
-        if m.bias is not None: 
+        if m.bias is not None:
             m.bias.data.zero_()
     elif isinstance(m, nn.ConvTranspose2d):
         n = m.kernel_size[0] * m.kernel_size[1] * m.in_channels
         m.weight.data.normal_(0, math.sqrt(2. / n))
-        if m.bias is not None: 
+        if m.bias is not None:
             m.bias.data.zero_()
     elif isinstance(m, nn.BatchNorm2d):
         m.weight.data.fill_(1)
@@ -63,13 +63,13 @@ class DeConv(Decoder):
     def __init__(self, in_channels, kernel_size):
         assert kernel_size>=2, "kernel_size out of range: {}".format(kernel_size)
         super(DeConv, self).__init__()
-        
+
         def convt(in_channels):
             stride = 2
             padding = (kernel_size - 1) // 2
             output_padding = kernel_size % 2
             assert -2 - 2*padding + kernel_size + output_padding == 0, "deconv parameters incorrect"
-            
+
             module_name = "deconv{}".format(kernel_size)
             return nn.Sequential(collections.OrderedDict([
                   (module_name, nn.ConvTranspose2d(in_channels,in_channels//2,kernel_size,
@@ -107,7 +107,7 @@ class UpProj(Decoder):
 
     class UpProjModule(nn.Module):
         # UpProj module has two branches, with a Unpool at the start and a ReLu at the end
-        #   upper branch: 5*5 conv -> batchnorm -> ReLU -> 3*3 conv -> batchnorm 
+        #   upper branch: 5*5 conv -> batchnorm -> ReLU -> 3*3 conv -> batchnorm
         #   bottom branch: 5*5 conv -> batchnorm
 
         def __init__(self, in_channels):
@@ -145,7 +145,7 @@ class UpProj(Decoder):
 def choose_decoder(decoder, in_channels):
     # iheight, iwidth = 10, 8
     if decoder[:6] == 'deconv':
-        assert len(decoder)==7 
+        assert len(decoder)==7
         kernel_size = int(decoder[6])
         return DeConv(in_channels, kernel_size)
     elif decoder == "upproj":
@@ -157,14 +157,14 @@ def choose_decoder(decoder, in_channels):
 
 
 class ResNet(nn.Module):
-    def __init__(self, layers, decoder, in_channels=3, out_channels=1, pretrained=True):
+    def __init__(self, layers, decoder, output_size, in_channels=3, pretrained=True):
 
         if layers not in [18, 34, 50, 101, 152]:
             raise RuntimeError('Only 18, 34, 50, 101, and 152 layer model are defined for ResNet. Got {}'.format(layers))
-        
+
         super(ResNet, self).__init__()
         pretrained_model = torchvision.models.__dict__['resnet{}'.format(layers)](pretrained=pretrained)
-        
+
         if in_channels == 3:
             self.conv1 = pretrained_model._modules['conv1']
             self.bn1 = pretrained_model._modules['bn1']
@@ -173,7 +173,9 @@ class ResNet(nn.Module):
             self.bn1 = nn.BatchNorm2d(64)
             weights_init(self.conv1)
             weights_init(self.bn1)
-        
+
+        self.output_size = output_size
+
         self.relu = pretrained_model._modules['relu']
         self.maxpool = pretrained_model._modules['maxpool']
         self.layer1 = pretrained_model._modules['layer1']
@@ -187,6 +189,8 @@ class ResNet(nn.Module):
         # define number of intermediate channels
         if layers <= 34:
             num_channels = 512
+            # Need to modify owidth for ResNet18 model.
+            owidth = 912
         elif layers >= 50:
             num_channels = 2048
 
@@ -195,8 +199,8 @@ class ResNet(nn.Module):
         self.decoder = choose_decoder(decoder, num_channels//2)
 
         # setting bias=true doesn't improve accuracy
-        self.conv3 = nn.Conv2d(num_channels//32,out_channels,kernel_size=3,stride=1,padding=1,bias=False)
-        self.bilinear = nn.Upsample(size=(oheight, owidth), mode='bilinear', align_corners=True)
+        self.conv3 = nn.Conv2d(num_channels//32,1,kernel_size=3,stride=1,padding=1,bias=False)
+        self.bilinear = nn.Upsample(size=self.output_size, mode='bilinear', align_corners=True)
 
         # weight init
         self.conv2.apply(weights_init)
