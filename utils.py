@@ -87,9 +87,9 @@ def adjust_learning_rate(optimizer, epoch, lr_init):
 
 def get_output_directory(args):
     output_directory = os.path.join('results',
-        '{}.sparsifier={}.modality={}.arch={}.decoder={}.criterion={}.lr={}.bs={}.pretrained={}'.
-        format(args.data, args.sparsifier, args.modality, args.arch, \
-            args.decoder, args.criterion, args.lr, args.batch_size, \
+        '{}.sparsifier={}.samples={}.modality={}.arch={}.decoder={}.criterion={}.lr={}.bs={}.pretrained={}'.
+        format(args.data, args.sparsifier, args.num_samples, args.modality, \
+            args.arch, args.decoder, args.criterion, args.lr, args.batch_size, \
             args.pretrained))
     return output_directory
 
