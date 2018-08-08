@@ -73,7 +73,9 @@ def main():
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True,
-        num_workers=args.workers, pin_memory=True, sampler=None)
+        num_workers=args.workers, pin_memory=True, sampler=None,
+        worker_init_fn=lambda work_id:np.random.seed(work_id))
+    # worker_init_fn ensures different sampling patterns for each data loading thread
 
     # set batch size to be 1 for validation
     val_loader = torch.utils.data.DataLoader(val_dataset,
