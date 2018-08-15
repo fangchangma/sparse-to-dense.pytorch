@@ -1,12 +1,9 @@
-import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models
 import collections
 import math
-
-oheight, owidth = 228, 304
 
 class Unpool(nn.Module):
     # Unpool: 2*2 unpooling with zero padding
@@ -189,8 +186,6 @@ class ResNet(nn.Module):
         # define number of intermediate channels
         if layers <= 34:
             num_channels = 512
-            # Need to modify owidth for ResNet18 model.
-            owidth = 912
         elif layers >= 50:
             num_channels = 2048
 
