@@ -44,7 +44,7 @@ This code was tested with Python 3 and PyTorch 0.4.0.
 	cd ..
 	```
 ## Training
-The training scripts come with several options, which can be listed with the `--help` flag. Currently this repo only supports training on the NYU dataset.
+The training scripts come with several options, which can be listed with the `--help` flag. 
 ```bash
 python3 main.py --help
 ```
