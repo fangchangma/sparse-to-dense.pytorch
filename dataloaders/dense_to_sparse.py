@@ -34,6 +34,7 @@ class UniformSampling(DenseToSparse):
         Only pixels with a maximum depth of `max_depth` are considered.
         If no `max_depth` is given, samples in all pixels
         """
+        """
         if self.max_depth is not np.inf:
             mask_keep = depth <= self.max_depth
             n_keep = np.count_nonzero(mask_keep)
@@ -45,6 +46,38 @@ class UniformSampling(DenseToSparse):
         else:
             prob = float(self.num_samples) / depth.size
             return np.random.uniform(0, 1, depth.shape) < prob
+        """
+        if self.max_depth is not np.inf:
+            valid_index = []
+            # record the entries that are in the range 0~max_depth
+            for i, row in enumerate(depth):
+                for j, elemt in enumerate(row):
+                    if elemt > 0 and elemt <= self.max_depth:
+                        valid_index += [(i,j)]
+            if len(vallid_index) == 0:
+                return np.zeros(depth.shape, dtype=bool)
+            prob = float(self.num_samples) / len(valid_index)
+            keep = np.random.uniform(0, 1, (len(valid_index), )) < prob
+            rv = np.zeros(depth.shape, dtype=bool)
+            for i, value in enumerate(keep):
+                if value:
+                    row, col = valid_index[i]
+                    rv[row][col] = True
+            return rv
+        else:
+            valid_index = []
+            for i, row in enumerate(depth):
+                for j, elemt in enumerate(row):
+                    if elemt > 0:
+                        valid_index += [(i,j)]
+            prob = float(self.num_samples) / len(valid_index)
+            keep = np.random.uniform(0, 1, (len(valid_index), )) < prob
+            rv = np.zeros(depth.shape, dtype=bool)
+            for i, value in enumerate(keep):
+                if value:
+                    row, col = valid_index[i]
+                    rv[row][col] = True
+            return rv
 
 
 class SimulatedStereo(DenseToSparse):
