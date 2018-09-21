@@ -26,75 +26,19 @@ best_result.set_to_worst()
 def main():
     global args, best_result, output_directory, train_csv, test_csv
 
-    # create results folder, if not already exists
-    output_directory = utils.get_output_directory(args)
-    if not os.path.exists(output_directory):
-        os.makedirs(output_directory)
-    train_csv = os.path.join(output_directory, 'train.csv')
-    test_csv = os.path.join(output_directory, 'test.csv')
-    best_txt = os.path.join(output_directory, 'best.txt')
-
-    # define loss function (criterion) and optimizer
-    if args.criterion == 'l2':
-        criterion = criteria.MaskedMSELoss().cuda()
-    elif args.criterion == 'l1':
-        criterion = criteria.MaskedL1Loss().cuda()
-
-    # sparsifier is a class for generating random sparse depth input from the ground truth
-    sparsifier = None
-    max_depth = args.max_depth if args.max_depth >= 0.0 else np.inf
-    if args.sparsifier == UniformSampling.name:
-        sparsifier = UniformSampling(num_samples=args.num_samples, max_depth=max_depth)
-    elif args.sparsifier == SimulatedStereo.name:
-        sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
-
-    # Data loading code
-    print("=> creating data loaders ...")
-    traindir = os.path.join('data', args.data, 'train')
-    valdir = os.path.join('data', args.data, 'val')
-
-    if args.data == 'nyudepthv2':
-        from dataloaders.nyu_dataloader import NYUDataset
-        train_dataset = NYUDataset(traindir, type='train',
-            modality=args.modality, sparsifier=sparsifier)
-        val_dataset = NYUDataset(valdir, type='val',
-            modality=args.modality, sparsifier=sparsifier)
-
-    elif args.data == 'kitti':
-        from dataloaders.kitti_dataloader import KITTIDataset
-        train_dataset = KITTIDataset(traindir, type='train',
-            modality=args.modality, sparsifier=sparsifier)
-        val_dataset = KITTIDataset(valdir, type='val',
-            modality=args.modality, sparsifier=sparsifier)
-
-    else:
-        raise RuntimeError('Dataset not found.' +
-                           'The dataset must be either of nyudepthv2 or kitti.')
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True,
-        num_workers=args.workers, pin_memory=True, sampler=None,
-        worker_init_fn=lambda work_id:np.random.seed(work_id))
-    # worker_init_fn ensures different sampling patterns for each data loading thread
-
-    # set batch size to be 1 for validation
-    val_loader = torch.utils.data.DataLoader(val_dataset,
-        batch_size=1, shuffle=False, num_workers=args.workers, pin_memory=True)
-    print("=> data loaders created.")
-
     # evaluation mode
+    start_epoch = 0
     if args.evaluate:
-        best_model_filename = os.path.join(output_directory, 'model_best.pth.tar')
-        assert os.path.isfile(best_model_filename), \
-        "=> no best model found at '{}'".format(best_model_filename)
-        print("=> loading best model '{}'".format(best_model_filename))
-        checkpoint = torch.load(best_model_filename)
-        args.start_epoch = checkpoint['epoch']
+        assert os.path.isfile(args.evaluate), \
+        "=> no best model found at '{}'".format(args.evaluate)
+        print("=> loading best model '{}'".format(args.evaluate))
+        checkpoint = torch.load(args.evaluate)
+        args = checkpoint['args']
+        args.evaluate = True
+        start_epoch = checkpoint['epoch'] + 1
         best_result = checkpoint['best_result']
         model = checkpoint['model']
         print("=> loaded best model (epoch {})".format(checkpoint['epoch']))
-        validate(val_loader, model, checkpoint['epoch'], write_to_file=False)
-        return
 
     # optionally resume from a checkpoint
     elif args.resume:
@@ -102,10 +46,12 @@ def main():
             "=> no checkpoint found at '{}'".format(args.resume)
         print("=> loading checkpoint '{}'".format(args.resume))
         checkpoint = torch.load(args.resume)
-        args.start_epoch = checkpoint['epoch']+1
+        args = checkpoint['args']
+        start_epoch = checkpoint['epoch'] + 1
         best_result = checkpoint['best_result']
         model = checkpoint['model']
         optimizer = checkpoint['optimizer']
+        output_directory, _ = os.path.split(args.resume)
         print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
 
     # create new model
@@ -137,7 +83,70 @@ def main():
     # print(model)
     print("=> model transferred to GPU.")
 
-    for epoch in range(args.start_epoch, args.epochs):
+    # define loss function (criterion) and optimizer
+    if args.criterion == 'l2':
+        criterion = criteria.MaskedMSELoss().cuda()
+    elif args.criterion == 'l1':
+        criterion = criteria.MaskedL1Loss().cuda()
+
+    # sparsifier is a class for generating random sparse depth input from the ground truth
+    sparsifier = None
+    max_depth = args.max_depth if args.max_depth >= 0.0 else np.inf
+    if args.sparsifier == UniformSampling.name:
+        sparsifier = UniformSampling(num_samples=args.num_samples, max_depth=max_depth)
+    elif args.sparsifier == SimulatedStereo.name:
+        sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
+
+    # Data loading code
+    print("=> creating data loaders ...")
+    traindir = os.path.join('data', args.data, 'train')
+    valdir = os.path.join('data', args.data, 'val')
+
+    if args.data == 'nyudepthv2':
+        from dataloaders.nyu_dataloader import NYUDataset
+        if not args.evaluate:
+            train_dataset = NYUDataset(traindir, type='train',
+                modality=args.modality, sparsifier=sparsifier)
+        val_dataset = NYUDataset(valdir, type='val',
+            modality=args.modality, sparsifier=sparsifier)
+
+    elif args.data == 'kitti':
+        from dataloaders.kitti_dataloader import KITTIDataset
+        if not args.evaluate:
+            train_dataset = KITTIDataset(traindir, type='train',
+                modality=args.modality, sparsifier=sparsifier)
+        val_dataset = KITTIDataset(valdir, type='val',
+            modality=args.modality, sparsifier=sparsifier)
+
+    else:
+        raise RuntimeError('Dataset not found.' +
+                           'The dataset must be either of nyudepthv2 or kitti.')
+
+    # set batch size to be 1 for validation
+    val_loader = torch.utils.data.DataLoader(val_dataset,
+        batch_size=1, shuffle=False, num_workers=args.workers, pin_memory=True)
+    print("=> data loaders created.")
+
+    if args.evaluate:
+        validate(val_loader, model, checkpoint['epoch'], write_to_file=False)
+        return
+
+    # put construction of train loader here, for those who are interested in testing only
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=args.batch_size, shuffle=True,
+        num_workers=args.workers, pin_memory=True, sampler=None,
+        worker_init_fn=lambda work_id:np.random.seed(work_id))
+        # worker_init_fn ensures different sampling patterns for each data loading thread
+
+    # create results folder, if not already exists
+    output_directory = utils.get_output_directory(args)
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+    train_csv = os.path.join(output_directory, 'train.csv')
+    test_csv = os.path.join(output_directory, 'test.csv')
+    best_txt = os.path.join(output_directory, 'best.txt')
+
+    for epoch in range(start_epoch, args.epochs):
         utils.adjust_learning_rate(optimizer, epoch, args.lr)
         train(train_loader, model, criterion, optimizer, epoch) # train for one epoch
         result, img_merge = validate(val_loader, model, epoch) # evaluate on validation set

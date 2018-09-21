@@ -14,9 +14,6 @@ This repo can be used for training and testing of
 
 The original Torch implementation of the paper can be found [here](https://github.com/fangchangma/sparse-to-dense).
 
-## Thanks
-Thanks to [Tim](https://github.com/timethy) and [Akari](https://github.com/AkariAsai) for their contributions.
-
 ## Contents
 0. [Requirements](#requirements)
 0. [Training](#training)
@@ -54,13 +51,15 @@ For instance, run the following command to train a network with ResNet50 as the 
 python3 main.py -a resnet50 -d deconv3 -m rgbd -s 100 -data nyudepthv2
 ```
 
-Training results will be saved under the `results` folder.
-
+Training results will be saved under the `results` folder. To resume a previous training, run
+```bash
+python3 main.py --resume [path_to_previous_model]
+```
 
 ## Testing
-To test the performance of a trained model, simply run main.py with the `-e` option, along with other model options. For instance,
+To test the performance of a trained model without training, simply run main.py with the `-e` option. For instance,
 ```bash
-python3 main.py -e -a resnet50 -d deconv3 -m rgbd -s 100 -data nyudepthv2
+python3 main.py --evaluate [path_to_trained_model]
 ```
 
 ## Trained Models
@@ -124,4 +123,4 @@ If you use our code or method in your work, please consider citing the following
 		year={2018}
 	}
 
-Please direct any questions to [Fangchang Ma](http://www.mit.edu/~fcma) at fcma@mit.edu.
+Please create a new issue for code-related questions. Pull requests are welcome.
