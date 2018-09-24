@@ -26,6 +26,48 @@ best_result.set_to_worst()
 def main():
     global args, best_result, output_directory, train_csv, test_csv
 
+    # sparsifier is a class for generating random sparse depth input from the ground truth
+    sparsifier = None
+    max_depth = args.max_depth if args.max_depth >= 0.0 else np.inf
+    if args.sparsifier == UniformSampling.name:
+        sparsifier = UniformSampling(num_samples=args.num_samples, max_depth=max_depth)
+    elif args.sparsifier == SimulatedStereo.name:
+        sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
+
+    # Data loading code
+    print("=> creating data loaders ...")
+    traindir = os.path.join('data', args.data, 'train')
+    valdir = os.path.join('data', args.data, 'val')
+
+    if args.data == 'nyudepthv2':
+        from dataloaders.nyu_dataloader import NYUDataset
+        if not args.evaluate:
+            train_dataset = NYUDataset(traindir, type='train',
+                modality=args.modality, sparsifier=sparsifier)
+        val_dataset = NYUDataset(valdir, type='val',
+            modality=args.modality, sparsifier=sparsifier)
+
+    elif args.data == 'kitti':
+        from dataloaders.kitti_dataloader import KITTIDataset
+        if not args.evaluate:
+            train_dataset = KITTIDataset(traindir, type='train',
+                modality=args.modality, sparsifier=sparsifier)
+        val_dataset = KITTIDataset(valdir, type='val',
+            modality=args.modality, sparsifier=sparsifier)
+
+    else:
+        raise RuntimeError('Dataset not found.' +
+                           'The dataset must be either of nyudepthv2 or kitti.')
+
+
+    # create results folder, if not already exists
+    output_directory = utils.get_output_directory(args)
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+    train_csv = os.path.join(output_directory, 'train.csv')
+    test_csv = os.path.join(output_directory, 'test.csv')
+    best_txt = os.path.join(output_directory, 'best.txt')
+
     # evaluation mode
     start_epoch = 0
     if args.evaluate:
@@ -88,39 +130,6 @@ def main():
         criterion = criteria.MaskedMSELoss().cuda()
     elif args.criterion == 'l1':
         criterion = criteria.MaskedL1Loss().cuda()
-
-    # sparsifier is a class for generating random sparse depth input from the ground truth
-    sparsifier = None
-    max_depth = args.max_depth if args.max_depth >= 0.0 else np.inf
-    if args.sparsifier == UniformSampling.name:
-        sparsifier = UniformSampling(num_samples=args.num_samples, max_depth=max_depth)
-    elif args.sparsifier == SimulatedStereo.name:
-        sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
-
-    # Data loading code
-    print("=> creating data loaders ...")
-    traindir = os.path.join('data', args.data, 'train')
-    valdir = os.path.join('data', args.data, 'val')
-
-    if args.data == 'nyudepthv2':
-        from dataloaders.nyu_dataloader import NYUDataset
-        if not args.evaluate:
-            train_dataset = NYUDataset(traindir, type='train',
-                modality=args.modality, sparsifier=sparsifier)
-        val_dataset = NYUDataset(valdir, type='val',
-            modality=args.modality, sparsifier=sparsifier)
-
-    elif args.data == 'kitti':
-        from dataloaders.kitti_dataloader import KITTIDataset
-        if not args.evaluate:
-            train_dataset = KITTIDataset(traindir, type='train',
-                modality=args.modality, sparsifier=sparsifier)
-        val_dataset = KITTIDataset(valdir, type='val',
-            modality=args.modality, sparsifier=sparsifier)
-
-    else:
-        raise RuntimeError('Dataset not found.' +
-                           'The dataset must be either of nyudepthv2 or kitti.')
 
     # set batch size to be 1 for validation
     val_loader = torch.utils.data.DataLoader(val_dataset,
