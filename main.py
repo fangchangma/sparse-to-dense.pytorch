@@ -23,71 +23,13 @@ fieldnames = ['mse', 'rmse', 'absrel', 'lg10', 'mae',
 best_result = Result()
 best_result.set_to_worst()
 
-def main():
-    global args, best_result, output_directory, train_csv, test_csv
-
-    # evaluation mode
-    start_epoch = 0
-    if args.evaluate:
-        assert os.path.isfile(args.evaluate), \
-        "=> no best model found at '{}'".format(args.evaluate)
-        print("=> loading best model '{}'".format(args.evaluate))
-        checkpoint = torch.load(args.evaluate)
-        args = checkpoint['args']
-        args.evaluate = True
-        start_epoch = checkpoint['epoch'] + 1
-        best_result = checkpoint['best_result']
-        model = checkpoint['model']
-        print("=> loaded best model (epoch {})".format(checkpoint['epoch']))
-
-    # optionally resume from a checkpoint
-    elif args.resume:
-        assert os.path.isfile(args.resume), \
-            "=> no checkpoint found at '{}'".format(args.resume)
-        print("=> loading checkpoint '{}'".format(args.resume))
-        checkpoint = torch.load(args.resume)
-        args = checkpoint['args']
-        start_epoch = checkpoint['epoch'] + 1
-        best_result = checkpoint['best_result']
-        model = checkpoint['model']
-        optimizer = checkpoint['optimizer']
-        output_directory, _ = os.path.split(args.resume)
-        print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
-
-    # create new model
-    else:
-        # define model
-        print("=> creating Model ({}-{}) ...".format(args.arch, args.decoder))
-        in_channels = len(args.modality)
-        if args.arch == 'resnet50':
-            model = ResNet(layers=50, decoder=args.decoder, output_size=train_dataset.output_size,
-                in_channels=in_channels, pretrained=args.pretrained)
-        elif args.arch == 'resnet18':
-            model = ResNet(layers=18, decoder=args.decoder, output_size=train_dataset.output_size,
-                in_channels=in_channels, pretrained=args.pretrained)
-        print("=> model created.")
-
-        optimizer = torch.optim.SGD(model.parameters(), args.lr, \
-            momentum=args.momentum, weight_decay=args.weight_decay)
-
-        # create new csv files with only header
-        with open(train_csv, 'w') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-        with open(test_csv, 'w') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-
-    # model = torch.nn.DataParallel(model).cuda() # for multi-gpu training
-    model = model.cuda()
-    # print(model)
-    print("=> model transferred to GPU.")
-
-    # define loss function (criterion) and optimizer
-    if args.criterion == 'l2':
-        criterion = criteria.MaskedMSELoss().cuda()
-    elif args.criterion == 'l1':
-        criterion = criteria.MaskedL1Loss().cuda()
+def create_data_loaders(args):
+    # Data loading code
+    print("=> creating data loaders ...")
+    traindir = os.path.join('data', args.data, 'train')
+    valdir = os.path.join('data', args.data, 'val')
+    train_loader = None
+    val_loader = None
 
     # sparsifier is a class for generating random sparse depth input from the ground truth
     sparsifier = None
@@ -96,11 +38,6 @@ def main():
         sparsifier = UniformSampling(num_samples=args.num_samples, max_depth=max_depth)
     elif args.sparsifier == SimulatedStereo.name:
         sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
-
-    # Data loading code
-    print("=> creating data loaders ...")
-    traindir = os.path.join('data', args.data, 'train')
-    valdir = os.path.join('data', args.data, 'val')
 
     if args.data == 'nyudepthv2':
         from dataloaders.nyu_dataloader import NYUDataset
@@ -125,18 +62,78 @@ def main():
     # set batch size to be 1 for validation
     val_loader = torch.utils.data.DataLoader(val_dataset,
         batch_size=1, shuffle=False, num_workers=args.workers, pin_memory=True)
-    print("=> data loaders created.")
 
+    # put construction of train loader here, for those who are interested in testing only
+    if not args.evaluate:
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=args.batch_size, shuffle=True,
+            num_workers=args.workers, pin_memory=True, sampler=None,
+            worker_init_fn=lambda work_id:np.random.seed(work_id))
+            # worker_init_fn ensures different sampling patterns for each data loading thread
+
+    print("=> data loaders created.")
+    return train_loader, val_loader
+
+def main():
+    global args, best_result, output_directory, train_csv, test_csv
+
+    # evaluation mode
+    start_epoch = 0
     if args.evaluate:
+        assert os.path.isfile(args.evaluate), \
+        "=> no best model found at '{}'".format(args.evaluate)
+        print("=> loading best model '{}'".format(args.evaluate))
+        checkpoint = torch.load(args.evaluate)
+        output_directory = os.path.dirname(args.evaluate)
+        args = checkpoint['args']
+        start_epoch = checkpoint['epoch'] + 1
+        best_result = checkpoint['best_result']
+        model = checkpoint['model']
+        print("=> loaded best model (epoch {})".format(checkpoint['epoch']))
+        _, val_loader = create_data_loaders(args)
+        args.evaluate = True
         validate(val_loader, model, checkpoint['epoch'], write_to_file=False)
         return
 
-    # put construction of train loader here, for those who are interested in testing only
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True,
-        num_workers=args.workers, pin_memory=True, sampler=None,
-        worker_init_fn=lambda work_id:np.random.seed(work_id))
-        # worker_init_fn ensures different sampling patterns for each data loading thread
+    # optionally resume from a checkpoint
+    elif args.resume:
+        assert os.path.isfile(args.resume), \
+            "=> no checkpoint found at '{}'".format(args.resume)
+        print("=> loading checkpoint '{}'".format(args.resume))
+        checkpoint = torch.load(args.resume)
+        args = checkpoint['args']
+        start_epoch = checkpoint['epoch'] + 1
+        best_result = checkpoint['best_result']
+        model = checkpoint['model']
+        optimizer = checkpoint['optimizer']
+        output_directory = os.path.dirname(os.path.abspath(args.resume))
+        print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
+        train_loader, val_loader = create_data_loaders(args)
+        args.resume = True
+
+    # create new model
+    else:
+        train_loader, val_loader = create_data_loaders(args)
+        print("=> creating Model ({}-{}) ...".format(args.arch, args.decoder))
+        in_channels = len(args.modality)
+        if args.arch == 'resnet50':
+            model = ResNet(layers=50, decoder=args.decoder, output_size=train_loader.dataset.output_size,
+                in_channels=in_channels, pretrained=args.pretrained)
+        elif args.arch == 'resnet18':
+            model = ResNet(layers=18, decoder=args.decoder, output_size=train_loader.dataset.output_size,
+                in_channels=in_channels, pretrained=args.pretrained)
+        print("=> model created.")
+        optimizer = torch.optim.SGD(model.parameters(), args.lr, \
+            momentum=args.momentum, weight_decay=args.weight_decay)
+
+        # model = torch.nn.DataParallel(model).cuda() # for multi-gpu training
+        model = model.cuda()
+
+    # define loss function (criterion) and optimizer
+    if args.criterion == 'l2':
+        criterion = criteria.MaskedMSELoss().cuda()
+    elif args.criterion == 'l1':
+        criterion = criteria.MaskedL1Loss().cuda()
 
     # create results folder, if not already exists
     output_directory = utils.get_output_directory(args)
@@ -145,6 +142,15 @@ def main():
     train_csv = os.path.join(output_directory, 'train.csv')
     test_csv = os.path.join(output_directory, 'test.csv')
     best_txt = os.path.join(output_directory, 'best.txt')
+
+    # create new csv files with only header
+    if not args.resume:
+        with open(train_csv, 'w') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+        with open(test_csv, 'w') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
 
     for epoch in range(start_epoch, args.epochs):
         utils.adjust_learning_rate(optimizer, epoch, args.lr)
