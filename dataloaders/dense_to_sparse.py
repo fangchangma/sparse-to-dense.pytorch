@@ -16,10 +16,8 @@ class DenseToSparse:
     def __repr__(self):
         pass
 
-
 class UniformSampling(DenseToSparse):
     name = "uar"
-
     def __init__(self, num_samples, max_depth=np.inf):
         DenseToSparse.__init__(self)
         self.num_samples = num_samples
@@ -34,17 +32,15 @@ class UniformSampling(DenseToSparse):
         Only pixels with a maximum depth of `max_depth` are considered.
         If no `max_depth` is given, samples in all pixels
         """
+        mask_keep = depth > 0
         if self.max_depth is not np.inf:
-            mask_keep = depth <= self.max_depth
-            n_keep = np.count_nonzero(mask_keep)
-            if n_keep == 0:
-                return mask_keep
-            else:
-                prob = float(self.num_samples) / n_keep
-                return np.bitwise_and(mask_keep, np.random.uniform(0, 1, depth.shape) < prob)
+            mask_keep = np.bitwise_and(mask_keep, depth <= self.max_depth)
+        n_keep = np.count_nonzero(mask_keep)
+        if n_keep == 0:
+            return mask_keep
         else:
-            prob = float(self.num_samples) / depth.size
-            return np.random.uniform(0, 1, depth.shape) < prob
+            prob = float(self.num_samples) / n_keep
+            return np.bitwise_and(mask_keep, np.random.uniform(0, 1, depth.shape) < prob)
 
 
 class SimulatedStereo(DenseToSparse):
