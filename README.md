@@ -48,7 +48,7 @@ python3 main.py --help
 
 For instance, run the following command to train a network with ResNet50 as the encoder, deconvolutions of kernel size 3 as the decoder, and both RGB and 100 random sparse depth samples as the input to the network.
 ```bash
-python3 main.py -a resnet50 -d deconv3 -m rgbd -s 100 -data nyudepthv2
+python3 main.py -a resnet50 -d deconv3 -m rgbd -s 100 --data nyudepthv2
 ```
 
 Training results will be saved under the `results` folder. To resume a previous training, run
