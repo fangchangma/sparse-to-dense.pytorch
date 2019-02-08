@@ -97,16 +97,17 @@ def main():
 
     # optionally resume from a checkpoint
     elif args.resume:
-        assert os.path.isfile(args.resume), \
-            "=> no checkpoint found at '{}'".format(args.resume)
-        print("=> loading checkpoint '{}'".format(args.resume))
-        checkpoint = torch.load(args.resume)
+        chkpt_path = args.resume
+        assert os.path.isfile(chkpt_path), \
+            "=> no checkpoint found at '{}'".format(chkpt_path)
+        print("=> loading checkpoint '{}'".format(chkpt_path))
+        checkpoint = torch.load(chkpt_path)
         args = checkpoint['args']
         start_epoch = checkpoint['epoch'] + 1
         best_result = checkpoint['best_result']
         model = checkpoint['model']
         optimizer = checkpoint['optimizer']
-        output_directory = os.path.dirname(os.path.abspath(args.resume))
+        output_directory = os.path.dirname(os.path.abspath(chkpt_path))
         print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
         train_loader, val_loader = create_data_loaders(args)
         args.resume = True
