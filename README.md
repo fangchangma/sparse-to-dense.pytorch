@@ -63,7 +63,7 @@ python3 main.py --evaluate [path_to_trained_model]
 ```
 
 ## Trained Models
-Trained models will be released later.
+A number of trained models is available [here](http://datasets.lids.mit.edu/sparse-to-dense.pytorch/results/).
 
 ## Benchmark
 The following numbers are from the original Torch repo.
